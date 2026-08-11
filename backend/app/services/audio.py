@@ -1,60 +1,67 @@
-"""Server-side Hebrew pronunciation audio via eSpeak NG — offline, no API
-key, no billing account, same zero-cost-risk posture as the rest of this
-app's external-service policy (SPEC.md §2.1's ethos generalized beyond just
-Gemini). Generated lazily on first request per word and cached in Postgres
-(WordPair.hebrew_audio) — see app.routers.audio.
+"""Server-side Hebrew pronunciation audio via gTTS — a thin wrapper around
+Google Translate's own "listen" feature (the same endpoint the speaker icon
+on translate.google.com calls). Chosen over eSpeak NG (this app's original,
+fully-offline choice) for voice quality: natural-sounding versus eSpeak's
+robotic synthesis, at the cost of being an unofficial, undocumented,
+reverse-engineered endpoint with no SLA — Google could change or block it
+without warning. No API key, no billing account either way, so it doesn't
+touch this app's cost-safety policy (SPEC.md §2.1) — the risk here is
+availability, not cost.
 
-Deliberately shells out to the `espeak-ng` binary rather than a Python
-wrapper package: one less pip dependency, and the binary is the thing that
-actually needs installing on whatever machine runs the backend (see
-README's Prerequisites — `winget install eSpeak-NG.eSpeak-NG` /
-`brew install espeak-ng` / `apt-get install espeak-ng`).
+Generated lazily on first request per word and cached in Postgres
+(WordPair.hebrew_audio) — see app.routers.audio — so the network dependency
+is a one-time cost per word, not a per-playback one. If gTTS ever fails
+(network issue, endpoint blocked/changed), the caller fails soft (404) and
+the frontend falls back to the browser's own speechSynthesis, exactly like
+before this feature existed — never a dead end.
 """
 
-import shutil
-import subprocess
-import tempfile
-from pathlib import Path
+import io
+import re
+
+import requests
+from gtts import gTTS
+from gtts.tts import gTTSError
 
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Resolved once at import time. Tests monkeypatch this name directly to
-# simulate "not installed" without needing the real binary present.
-ESPEAK_BINARY: str | None = shutil.which("espeak-ng") or shutil.which("espeak")
+# Hebrew niqqud (vowel points, U+0591-U+05C7) and cantillation marks.
+# gTTS handles niqqud gracefully on its own (confirmed live: identical
+# output with or without it) — stripping it here is just defensive
+# normalization, not a workaround for a real bug the way it was for the
+# eSpeak NG implementation this replaced.
+_NIQQUD_RANGE = re.compile(r"[֑-ׇ]")
+
+
+def _strip_niqqud(text: str) -> str:
+    return _NIQQUD_RANGE.sub("", text)
 
 
 class AudioGenerationUnavailable(Exception):
-    """eSpeak NG isn't installed on this machine, or the synthesis call
-    itself failed. The caller (app.routers.audio) fails soft on this —
-    no audio, HTTP 404 — exactly like a missing browser TTS voice failed
-    silently before this feature existed. Never a 500: a missing/broken
-    local TTS binary is not a server error worth alarming over.
+    """gTTS failed for any reason — network error, the endpoint rejecting
+    the request, an empty/unusable response. The caller (app.routers.audio)
+    fails soft on this — no audio, HTTP 404 — never a 500: an unofficial
+    third-party endpoint being unreachable is not a server error worth
+    alarming over.
     """
 
 
 def synthesize_hebrew(text: str) -> bytes:
-    """Returns WAV bytes for `text` spoken in Hebrew. Raises
-    AudioGenerationUnavailable if eSpeak NG isn't installed or the call
-    fails for any reason (bad input, timeout, non-zero exit).
+    """Returns MP3 bytes for `text` spoken in Hebrew via gTTS. Raises
+    AudioGenerationUnavailable on any failure.
     """
-    if not ESPEAK_BINARY:
-        raise AudioGenerationUnavailable("espeak-ng is not installed on this machine")
+    speakable = _strip_niqqud(text) or text  # never synthesize an empty string
+    try:
+        tts = gTTS(text=speakable, lang="iw")  # "iw" is gTTS/Google's legacy code for Hebrew
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+    except (gTTSError, requests.RequestException, ValueError) as exc:
+        raise AudioGenerationUnavailable(f"gTTS synthesis failed: {exc}") from exc
 
-    with tempfile.TemporaryDirectory() as tmp:
-        out_path = Path(tmp) / "out.wav"
-        try:
-            subprocess.run(
-                [ESPEAK_BINARY, "-v", "he", "-s", "150", "-w", str(out_path), text],
-                check=True,
-                capture_output=True,
-                timeout=10,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
-            raise AudioGenerationUnavailable(f"espeak-ng synthesis failed: {exc}") from exc
+    audio_bytes = buf.getvalue()
+    if not audio_bytes:
+        raise AudioGenerationUnavailable("gTTS produced no audio output")
 
-        if not out_path.exists() or out_path.stat().st_size == 0:
-            raise AudioGenerationUnavailable("espeak-ng produced no audio output")
-
-        return out_path.read_bytes()
+    return audio_bytes

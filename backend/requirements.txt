@@ -10,6 +10,7 @@ pyjwt>=2.10
 apscheduler>=3.10
 google-genai>=1.2
 python-dotenv>=1.0
+gTTS>=2.5
 
 # tests
 pytest>=8.3

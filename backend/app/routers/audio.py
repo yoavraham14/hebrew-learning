@@ -37,6 +37,6 @@ def get_hebrew_audio(word_pair_id: int, db: DbSession) -> Response:
 
     return Response(
         content=word.hebrew_audio,
-        media_type="audio/wav",
+        media_type="audio/mpeg",  # gTTS produces MP3, not WAV
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
