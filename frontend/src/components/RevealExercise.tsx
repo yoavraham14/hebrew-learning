@@ -46,7 +46,11 @@ export function RevealExercise({
             <p dir={card.reveal_target_lang === "he" ? "rtl" : "ltr"} className="text-4xl font-bold text-ember">
               {card.reveal_target_word}
             </p>
-            <AudioButton text={card.reveal_target_word} lang={card.reveal_target_lang} />
+            <AudioButton
+              text={card.reveal_target_word}
+              lang={card.reveal_target_lang}
+              wordPairId={card.word_pair_id}
+            />
           </div>
 
           {card.reveal_phonetic && (

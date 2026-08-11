@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AnswerResponse, MultipleChoiceCardOut } from "../types";
-import { AudioButton, speak } from "./AudioButton";
+import { AudioButton, playPronunciation } from "./AudioButton";
 import { CardHeader } from "./CardHeader";
 import { ExerciseOptionGrid } from "./ExerciseOptionGrid";
 import { isHebrewText } from "../lib/text";
@@ -28,7 +28,7 @@ export function MultipleChoiceExercise({
   // before any user gesture this session — e.g. iOS Safari's first play.)
   useEffect(() => {
     if (card.exercise_type === "audio_only" && card.audio_text && card.audio_lang) {
-      speak(card.audio_text, card.audio_lang);
+      playPronunciation(card.audio_text, card.audio_lang, card.word_pair_id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.word_pair_id, card.exercise_type]);
@@ -61,6 +61,7 @@ export function MultipleChoiceExercise({
             <AudioButton
               text={card.audio_text ?? ""}
               lang={card.audio_lang ?? "he"}
+              wordPairId={card.word_pair_id}
               className="!p-6 [&_svg]:h-8 [&_svg]:w-8"
             />
             <p className="text-sm text-parchment/50">Tap to hear the word</p>
@@ -81,7 +82,7 @@ export function MultipleChoiceExercise({
               {card.prompt_text}
             </p>
             {card.exercise_type === "reverse" && card.audio_text && card.audio_lang && (
-              <AudioButton text={card.audio_text} lang={card.audio_lang} />
+              <AudioButton text={card.audio_text} lang={card.audio_lang} wordPairId={card.word_pair_id} />
             )}
           </div>
         )}

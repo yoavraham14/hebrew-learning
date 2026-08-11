@@ -21,6 +21,17 @@ Full product spec: [SPEC.md](./SPEC.md).
 - Node.js 20+
 - Docker (for local Postgres)
 - A free Gemini API key from <https://aistudio.google.com/apikey>
+- **eSpeak NG** (optional but recommended) — generates Hebrew pronunciation
+  audio server-side so it plays identically on every device, instead of
+  relying on each browser/OS having a Hebrew text-to-speech voice installed
+  (many don't). Offline, free, no API key, no billing account — matches this
+  app's zero-cost-risk policy for external services. If it's missing, the
+  app still works: the frontend silently falls back to the browser's own
+  `speechSynthesis`, exactly like before this feature existed.
+  - Windows: `winget install eSpeak-NG.eSpeak-NG` (the installer needs an
+    admin UAC prompt — run it from an interactive terminal, not automated)
+  - macOS: `brew install espeak-ng`
+  - Linux: `apt-get install espeak-ng` (or your distro's equivalent)
 
 ## 1. Start Postgres
 

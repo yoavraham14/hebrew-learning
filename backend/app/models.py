@@ -7,6 +7,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -84,6 +85,17 @@ class WordPair(Base):
     # verified via the migration's server_default.
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     verification_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Server-generated pronunciation audio (WAV bytes, eSpeak NG — offline,
+    # no API key, no billing account, same zero-cost-risk posture as the
+    # rest of this app's external-service policy). Generated lazily on
+    # first request and cached here rather than at insert time, so it's
+    # decoupled from the Gemini generation pipeline entirely — see
+    # app.services.audio / app.routers.audio. NULL until first requested,
+    # or permanently if eSpeak NG isn't installed on this machine (the
+    # frontend falls back to browser TTS in that case, same as before this
+    # feature existed).
+    hebrew_audio: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
 
 class UserWordProgress(Base):

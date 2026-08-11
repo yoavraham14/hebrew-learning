@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.logging_config import configure_logging, get_logger
-from app.routers import auth, cards, health, profiles, progress
+from app.routers import audio, auth, cards, health, profiles, progress
 from app.services.scheduler import bootstrap_if_empty, start_scheduler
 
 settings = get_settings()
@@ -38,3 +38,4 @@ app.include_router(auth.router)
 app.include_router(profiles.router)
 app.include_router(cards.router)
 app.include_router(progress.router)
+app.include_router(audio.router)
