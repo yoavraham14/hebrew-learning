@@ -1,11 +1,12 @@
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 CefrLevel = Literal["A1", "A2", "B1", "B2"]
 RatingResult = Literal["knew_it", "almost", "didnt_know"]
+Lang = Literal["he", "es"]
 
 _HEBREW_RANGE = re.compile(r"[֐-׿]")
 
@@ -67,6 +68,36 @@ class GeneratedWordBatch(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Verification pass output (stage 2) — checks the stage-1 batch for
+# naturalness, register match, phonetic accuracy, and example-sentence
+# usage. See app/services/gemini_client.py verify_word_batch.
+# ---------------------------------------------------------------------------
+
+VerificationStatus = Literal["ok", "corrected", "reject"]
+
+
+class VerificationItem(BaseModel):
+    index: int = Field(ge=0)
+    status: VerificationStatus
+    corrected: GeneratedWordItem | None = None
+    note: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def _corrected_required_iff_status_corrected(self) -> "VerificationItem":
+        if self.status == "corrected" and self.corrected is None:
+            raise ValueError('corrected must be provided when status is "corrected"')
+        if self.status != "corrected" and self.corrected is not None:
+            # Not an error — just not the shape we asked for. Drop the
+            # unused payload rather than rejecting an otherwise-fine result.
+            self.corrected = None
+        return self
+
+
+class VerificationBatch(BaseModel):
+    results: list[VerificationItem]
+
+
+# ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
 
@@ -96,29 +127,106 @@ class TokenResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class CardOut(BaseModel):
+class RevealCardOut(BaseModel):
+    """The original passive reveal-and-self-rate exercise — served for a
+    word's first 1-2 exposures (exercise_level 0). See
+    app.services.exercise_ladder.
+    """
+
+    exercise_type: Literal["reveal"] = "reveal"
     word_pair_id: int
-    prompt: str
-    prompt_lang: str
-    reveal_english: str
-    reveal_target_word: str
-    reveal_target_lang: str
-    reveal_phonetic: str | None
-    example_target: str
-    example_native: str
+    is_review: bool
     part_of_speech: str
     cefr_level: str
     topic: str
+    prompt: str
+    prompt_lang: Lang
+    reveal_english: str
+    reveal_target_word: str
+    reveal_target_lang: Lang
+    reveal_phonetic: str | None
+    example_target: str
+    example_native: str
+
+
+class ExerciseOption(BaseModel):
+    word_pair_id: int
+    text: str
+    # Set only when `text` is Hebrew script and the viewing profile can't
+    # read it — script and transliteration are always shown together, never
+    # script alone (SPEC.md §1.1 applied to options, not just reveals).
+    phonetic: str | None = None
+
+
+class MultipleChoiceCardOut(BaseModel):
+    """The four harder exercise types (levels 1-4) — all multiple-choice,
+    never free text (see the plan's decision #3: typing is high-friction on
+    mobile and pointless in a script you can't read, for either profile).
+    Never carries which option is correct — that's checked server-side by
+    POST /api/cards/{id}/answer.
+    """
+
+    exercise_type: Literal["multiple_choice", "reverse", "audio_only", "fill_blank"]
+    word_pair_id: int
     is_review: bool
+    part_of_speech: str
+    cefr_level: str
+    topic: str
+
+    # None for audio_only (nothing shown until you play the audio).
+    prompt_text: str | None = None
+    prompt_lang: Lang | None = None
+    prompt_phonetic: str | None = None
+
+    # Set for audio_only (required) and optionally for reverse (prompt has
+    # an audio button too).
+    audio_text: str | None = None
+    audio_lang: Lang | None = None
+
+    # Only for fill_blank — the example sentence with the target word
+    # blanked out. prompt_text is unused in that case.
+    fill_blank_sentence: str | None = None
+
+    options: list[ExerciseOption]
+
+
+CardResponse = Annotated[
+    Union[RevealCardOut, MultipleChoiceCardOut], Field(discriminator="exercise_type")
+]
+
+
+class RoundOut(BaseModel):
+    """A batch of review-game cards (SPEC.md-adjacent — see the review-games
+    feature). Delivered as a side-channel on a rate/answer response, not as
+    a different shape on GET /cards/next — see plan decision #7.
+    """
+
+    kind: Literal["recovery", "mixed"]
+    cards: list[MultipleChoiceCardOut]
 
 
 class RateRequest(BaseModel):
     result: RatingResult
 
 
+class AnswerRequest(BaseModel):
+    selected_word_pair_id: int
+
+
 class RateResponse(BaseModel):
     box: int
     next_review_at: datetime
+    exercise_level: int
+    round_due: RoundOut | None = None
+
+
+class AnswerResponse(BaseModel):
+    correct: bool
+    correct_word_pair_id: int
+    correct_text: str
+    box: int
+    exercise_level: int
+    round_due: RoundOut | None = None
 
 
 class ProgressOut(BaseModel):

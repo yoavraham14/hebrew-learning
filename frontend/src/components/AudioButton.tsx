@@ -5,7 +5,7 @@ const SPEECH_LOCALE: Record<Lang, string> = {
   es: "es-ES",
 };
 
-function speak(text: string, lang: Lang): void {
+export function speak(text: string, lang: Lang): void {
   if (!("speechSynthesis" in window)) return; // no fallback/detection in v1 — see SPEC.md §6
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = SPEECH_LOCALE[lang];

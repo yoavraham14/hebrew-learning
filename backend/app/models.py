@@ -41,6 +41,10 @@ class Profile(Base):
     current_streak: Mapped[int] = mapped_column(Integer, default=0)
     last_activity_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # Lifetime count of ratings/answers of any exercise type — drives the
+    # recovery-round (every 15) and mixed-round (every 100) triggers.
+    total_reviews: Mapped[int] = mapped_column(Integer, default=0)
+
 
 class WordPair(Base):
     """One Hebrew<->Spanish<->English word concept, shared by both profiles
@@ -73,6 +77,14 @@ class WordPair(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
+    # Set by the stage-2 verification pass (SPEC.md-adjacent — see the
+    # translation-verification feature). Only verified words are ever
+    # selected for a card; unverified ones sit in the bank until a future
+    # verification sweep. Existing pre-feature rows are grandfathered as
+    # verified via the migration's server_default.
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    verification_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 class UserWordProgress(Base):
     """Per-(profile, word) review state. `box` drives the v1 interval ladder;
@@ -103,6 +115,30 @@ class UserWordProgress(Base):
     first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Exercise-difficulty ladder — independent of `box` (which drives *when*
+    # a word resurfaces). `exercise_level` drives *how* it's tested: 0-4,
+    # indexing app.services.exercise_ladder.LEVEL_NAMES. See that module for
+    # the transition logic.
+    exercise_level: Mapped[int] = mapped_column(Integer, default=0)
+    exercise_level_streak: Mapped[int] = mapped_column(Integer, default=0)
+
+    word_pair: Mapped["WordPair"] = relationship(lazy="joined")
+
+
+class RecentMiss(Base):
+    """A word a profile just got wrong (rated almost/didnt_know, or answered
+    an objective exercise incorrectly). The pool a recovery round draws
+    from — rows are deleted once served in a round (SPEC.md-adjacent — see
+    the review-games feature).
+    """
+
+    __tablename__ = "recent_miss"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    word_pair_id: Mapped[int] = mapped_column(ForeignKey("word_pairs.id", ondelete="CASCADE"))
+    missed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
     word_pair: Mapped["WordPair"] = relationship(lazy="joined")
 
 
@@ -119,6 +155,13 @@ class GenerationCallLog(Base):
     words_inserted: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(16))  # "success" | "error"
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # How many real Gemini requests this run actually made (1 = generate
+    # only; 2 = generate + verify). _count_calls_today sums this column, not
+    # row count, so the daily cap correctly counts both stages.
+    api_calls_made: Mapped[int] = mapped_column(Integer, default=1)
+    verify_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # "success"|"error"|"skipped_cap"
+    words_verified_ok: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class GenerationStatus(Base):

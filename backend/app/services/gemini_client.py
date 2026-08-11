@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from app.config import get_settings
 from app.logging_config import get_logger
-from app.schemas import GeneratedWordBatch
+from app.schemas import GeneratedWordBatch, GeneratedWordItem, VerificationBatch
 
 logger = get_logger(__name__)
 
@@ -63,6 +63,27 @@ def _is_billing_error(exc: Exception) -> bool:
     return any(keyword in message for keyword in _BILLING_KEYWORDS)
 
 
+# Shared between the generation prompt and the verification prompt so the
+# two calls never drift apart on what "correct" phonetics means. Referenced
+# by both _build_prompt and _build_verification_prompt.
+_PHONETIC_RULES = """- Use SPANISH spelling conventions so a Spanish speaker reading it aloud
+  produces the correct Hebrew sound. Example: the Hebrew word for "window"
+  (חלון) should be written "jalón" in phonetic_es — Spanish "j" is close to
+  the Hebrew guttural sound ח. Do NOT write "chalon"; Spanish "ch" (as in
+  "chico") is the wrong sound entirely.
+- Hebrew ר (resh) is a guttural/uvular sound, closer to a French R than a
+  Spanish tap-R or English R. Never render it as a bare unmarked "r" — use a
+  double letter, an accent, or another cue a Spanish reader will notice as
+  unusual, e.g. "rr" or a diacritic, consistently.
+- Mark the stressed syllable explicitly, e.g. with an acute accent on the
+  stressed vowel (áéíóú) following normal Spanish stress-marking
+  conventions. Hebrew very often stresses the final syllable, which Spanish
+  speakers will default to NOT doing — so mark it whenever it's not where
+  Spanish stress rules would predict.
+- phonetic_en can use standard English-reader phonetic conventions (e.g.
+  "chalon" is fine there, if that's the closest English rendering)."""
+
+
 def _build_prompt(*, topic: str, cefr_level: str, exclude_hebrew_words: list[str], batch_size: int) -> str:
     exclusion_block = ""
     if exclude_hebrew_words:
@@ -92,26 +113,51 @@ English-reading learner (phonetic_en) and, MOST IMPORTANTLY, one for a
 SPANISH-reading learner (phonetic_es) who cannot read Hebrew script and does
 not read English phonetics naturally. Get phonetic_es right:
 
-- Use SPANISH spelling conventions so a Spanish speaker reading it aloud
-  produces the correct Hebrew sound. Example: the Hebrew word for "window"
-  (חלון) should be written "jalón" in phonetic_es — Spanish "j" is close to
-  the Hebrew guttural sound ח. Do NOT write "chalon"; Spanish "ch" (as in
-  "chico") is the wrong sound entirely.
-- Hebrew ר (resh) is a guttural/uvular sound, closer to a French R than a
-  Spanish tap-R or English R. Never render it as a bare unmarked "r" — use a
-  double letter, an accent, or another cue a Spanish reader will notice as
-  unusual, e.g. "rr" or a diacritic, consistently.
-- Mark the stressed syllable explicitly, e.g. with an acute accent on the
-  stressed vowel (áéíóú) following normal Spanish stress-marking
-  conventions. Hebrew very often stresses the final syllable, which Spanish
-  speakers will default to NOT doing — so mark it whenever it's not where
-  Spanish stress rules would predict.
-- phonetic_en can use standard English-reader phonetic conventions (e.g.
-  "chalon" is fine there, if that's the closest English rendering).
+{_PHONETIC_RULES}
 
 Return every item even if some words repeat common roots — just make sure all
 {batch_size} hebrew_word values are distinct from each other and from the
 excluded list above."""
+
+
+def _build_verification_prompt(*, items: list[GeneratedWordItem], topic: str, cefr_level: str) -> str:
+    indexed = [
+        {"index": i, **item.model_dump()}
+        for i, item in enumerate(items)
+    ]
+    return f"""You are reviewing a batch of Hebrew<->Spanish<->English vocabulary
+entries for a bilingual flashcard app, for QUALITY — not just correctness.
+Do NOT just check against a generic translation tool's most common answer;
+check for the MOST NATURAL, EVERYDAY equivalent a native speaker would
+actually use in casual conversation.
+
+For each entry below (topic "{topic}", CEFR level {cefr_level}), check:
+1. Is the target translation (spanish_word, and the Hebrew side) the most
+   natural everyday word, not an unnecessarily formal, rare, or literary
+   alternative?
+2. Does the register match between source and target — a casual/colloquial
+   word should not map to a stiff/formal one, and vice versa?
+3. Is phonetic_es a phonetically correct Spanish-reader spelling of
+   hebrew_word, with guttural consonants and stress correctly rendered?
+   {_PHONETIC_RULES}
+   Also sanity-check phonetic_en the same way for an English reader.
+4. Does the example sentence actually use the word in its most common,
+   everyday sense — not an obscure secondary meaning?
+
+Entries (JSON array, each tagged with its "index"):
+{json.dumps(indexed, ensure_ascii=False)}
+
+For each entry, return exactly one result with the SAME "index":
+- status "ok" if everything checks out as-is — leave "corrected" unset.
+- status "corrected" if something needs fixing — include the FULL corrected
+  entry (every field, not just the changed ones) in "corrected", and a
+  short "note" explaining what you changed and why.
+- status "reject" only if the entry is fundamentally unusable (e.g. wrong
+  translation entirely, not a real word) and cannot be simply corrected —
+  include a "note" explaining why; leave "corrected" unset.
+
+Return exactly {len(items)} results, one per input index, covering every
+index from 0 to {len(items) - 1} exactly once."""
 
 
 def generate_word_batch(
@@ -157,3 +203,57 @@ def generate_word_batch(
         return GeneratedWordBatch.model_validate(data)
     except (json.JSONDecodeError, ValidationError) as exc:
         raise GeminiGenerationError(f"invalid JSON/schema from Gemini: {exc}") from exc
+
+
+def verify_word_batch(
+    *, items: list[GeneratedWordItem], topic: str, cefr_level: str
+) -> VerificationBatch:
+    """Stage 2 of the generation pipeline (SPEC.md-adjacent — see the
+    translation-verification feature): sends the stage-1 batch back to
+    Gemini for a quality pass. Raises the same error types as
+    generate_word_batch — the caller (word_generator.run_generation_batch)
+    handles both call sites identically.
+    """
+    settings = get_settings()
+    if not settings.gemini_api_key:
+        raise GeminiGenerationError("GEMINI_API_KEY is not configured")
+    if not items:
+        return VerificationBatch(results=[])
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    prompt = _build_verification_prompt(items=items, topic=topic, cefr_level=cefr_level)
+
+    try:
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=VerificationBatch,
+                temperature=0.2,  # verification should be consistent, not creative
+            ),
+        )
+    except Exception as exc:
+        if _is_billing_error(exc):
+            raise GeminiBillingError(str(exc)) from exc
+        raise GeminiGenerationError(f"Gemini verification call failed: {exc}") from exc
+
+    parsed = getattr(response, "parsed", None)
+    if isinstance(parsed, VerificationBatch):
+        batch = parsed
+    else:
+        text = getattr(response, "text", None)
+        if not text:
+            raise GeminiGenerationError("Gemini verification call returned no content")
+        try:
+            data = json.loads(text)
+            batch = VerificationBatch.model_validate(data)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise GeminiGenerationError(f"invalid JSON/schema from verification call: {exc}") from exc
+
+    indices = sorted(r.index for r in batch.results)
+    if indices != list(range(len(items))):
+        raise GeminiGenerationError(
+            f"verification response index mismatch: expected 0..{len(items) - 1}, got {indices}"
+        )
+    return batch

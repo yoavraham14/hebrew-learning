@@ -37,10 +37,27 @@ export default {
           from: { opacity: "0", transform: "translateY(8px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        // Answer-feedback siblings of reveal-glow/reveal-rise, above — same
+        // motif (a glow pulse), recolored per outcome rather than inventing
+        // a new signature interaction for the answer moment.
+        "correct-glow": {
+          "0%": { boxShadow: "0 0 0 0 rgba(111,207,151,0.55)", transform: "scale(0.98)" },
+          "60%": { boxShadow: "0 0 32px 6px rgba(111,207,151,0.35)" },
+          "100%": { boxShadow: "0 0 0 0 rgba(111,207,151,0)", transform: "scale(1)" },
+        },
+        "incorrect-shake": {
+          "0%, 100%": { transform: "translateX(0)" },
+          "20%": { transform: "translateX(-6px)" },
+          "40%": { transform: "translateX(5px)" },
+          "60%": { transform: "translateX(-3px)" },
+          "80%": { transform: "translateX(2px)" },
+        },
       },
       animation: {
         "reveal-glow": "reveal-glow 550ms ease-out",
         "reveal-rise": "reveal-rise 400ms ease-out both",
+        "correct-glow": "correct-glow 500ms ease-out",
+        "incorrect-shake": "incorrect-shake 400ms ease-out",
       },
     },
   },

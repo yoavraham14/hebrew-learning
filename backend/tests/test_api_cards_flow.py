@@ -23,6 +23,7 @@ def _seed_profile_and_word(db_session):
         topic="home",
         example_sentence_he="אני פותח את החלון.",
         example_sentence_es="Abro la ventana.",
+        verified=True,
     )
     db_session.add(word)
     db_session.commit()
@@ -110,6 +111,7 @@ def test_spanish_learner_direction_is_flipped(client, db_session):
         topic="hobbies",
         example_sentence_he="אני אוהב לרקוד.",
         example_sentence_es="Me gusta bailar.",
+        verified=True,
     )
     db_session.add(word)
     db_session.commit()

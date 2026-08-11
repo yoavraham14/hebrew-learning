@@ -1,4 +1,12 @@
-import type { CardOut, LoginResponse, ProfilePublic, ProgressOut, RateResponse, RatingResult } from "../types";
+import type {
+  AnswerResponse,
+  CardResponse,
+  LoginResponse,
+  ProfilePublic,
+  ProgressOut,
+  RateResponse,
+  RatingResult,
+} from "../types";
 
 // Vite only exposes VITE_-prefixed vars, read at build time. See
 // frontend/.env.example. No hardcoded URL/port — this must be set.
@@ -58,12 +66,18 @@ export const api = {
       body: JSON.stringify({ profile_slug, pin }),
     }),
 
-  nextCard: () => request<CardOut>("/api/cards/next"),
+  nextCard: () => request<CardResponse>("/api/cards/next"),
 
   rateCard: (wordPairId: number, result: RatingResult) =>
     request<RateResponse>(`/api/cards/${wordPairId}/rate`, {
       method: "POST",
       body: JSON.stringify({ result }),
+    }),
+
+  answerCard: (wordPairId: number, selectedWordPairId: number) =>
+    request<AnswerResponse>(`/api/cards/${wordPairId}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ selected_word_pair_id: selectedWordPairId }),
     }),
 
   getProgress: () => request<ProgressOut>("/api/progress"),
