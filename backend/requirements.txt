@@ -1,0 +1,17 @@
+fastapi>=0.115
+uvicorn[standard]>=0.34
+sqlalchemy>=2.0
+alembic>=1.14
+psycopg[binary]>=3.2.10
+pydantic>=2.10
+pydantic-settings>=2.7
+bcrypt>=4.2
+pyjwt>=2.10
+apscheduler>=3.10
+google-genai>=1.2
+python-dotenv>=1.0
+
+# tests
+pytest>=8.3
+pytest-asyncio>=0.25
+httpx>=0.28

@@ -1,0 +1,23 @@
+# Local dev only — Postgres runs in Docker; backend and frontend run
+# natively with hot reload (see README.md). Nothing here is used in
+# production; the eventual k8s deployment is out of scope for this repo.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lingua
+      POSTGRES_PASSWORD: lingua
+      POSTGRES_DB: lingua
+    ports:
+      - "5432:5432"
+    volumes:
+      - lingua_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lingua -d lingua"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  lingua_postgres_data:
