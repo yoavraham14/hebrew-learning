@@ -6,7 +6,8 @@ Words are generated at runtime by Gemini (free tier only — see
 [SPEC.md](./SPEC.md) §2 for the cost-safety design), stored in Postgres,
 and served instantly from that bank.
 
-Full product spec: [SPEC.md](./SPEC.md).
+Full product spec: [SPEC.md](./SPEC.md). How it's built: [ARCHITECTURE.md](./ARCHITECTURE.md).
+Deploying it: [DEPLOY.md](./DEPLOY.md).
 
 ## Stack
 

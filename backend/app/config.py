@@ -43,6 +43,19 @@ class Settings(BaseSettings):
     topup_threshold: int = 20
     topup_check_interval_minutes: int = 15
 
+    # In-process APScheduler top-up loop (§2.4). Fine for local dev / a
+    # long-lived process, but useless on Cloud Run: the container scales to
+    # zero when idle and the scheduler simply doesn't fire while asleep.
+    # Cloud Run deploys set this False and rely on Cloud Scheduler hitting
+    # POST /internal/tasks/generate-topup instead — see app/routers/internal.py.
+    enable_in_process_scheduler: bool = True
+
+    # Shared-secret auth for the /internal/tasks/* endpoints (Cloud
+    # Scheduler triggers, not user-facing — see app/routers/internal.py).
+    # None means those endpoints reject everything — fails closed, never
+    # accidentally open. Set only in the Cloud Run deployment's env.
+    internal_task_secret: str | None = None
+
     # --- Logging ---
     log_level: str = "INFO"
 
