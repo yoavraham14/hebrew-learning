@@ -52,6 +52,14 @@ class Profile(Base):
     # any time via PATCH /api/profiles/me, not just at creation.
     fluency_threshold: Mapped[int] = mapped_column(Integer, default=3)
 
+    # Progress-page stats (feature pass, stage C). daily_goal is a target
+    # review count per day, user-editable via PATCH /api/profiles/me
+    # alongside fluency_threshold; today's actual count lives in
+    # DailyActivity, not here. longest_streak only ever grows — updated
+    # in app.services.cards._apply_result whenever current_streak does.
+    daily_goal: Mapped[int] = mapped_column(Integer, default=10)
+    longest_streak: Mapped[int] = mapped_column(Integer, default=0)
+
 
 class WordPair(Base):
     """One Hebrew<->Spanish<->English word concept, shared by both profiles
@@ -174,6 +182,24 @@ class RecentMiss(Base):
     missed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
     word_pair: Mapped["WordPair"] = relationship(lazy="joined")
+
+
+class DailyActivity(Base):
+    """One row per (profile, calendar day) that had any activity — upserted
+    in app.services.cards._apply_result on every rate/answer. Backs the
+    progress page's daily-goal-vs-today card, and later feature-pass stages
+    (activity calendar, weekly summary) reuse this same table rather than
+    each inventing their own daily aggregate.
+    """
+
+    __tablename__ = "daily_activity"
+    __table_args__ = (UniqueConstraint("profile_id", "activity_date", name="uq_profile_activity_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    activity_date: Mapped[date] = mapped_column(Date, index=True)
+    review_count: Mapped[int] = mapped_column(Integer, default=0)
+    correct_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class GenerationCallLog(Base):

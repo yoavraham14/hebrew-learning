@@ -113,6 +113,7 @@ class ProfilePublicOut(BaseModel):
     native_lang: str
     target_lang: str
     fluency_threshold: int
+    daily_goal: int
 
     model_config = {"from_attributes": True}
 
@@ -124,10 +125,11 @@ class TokenResponse(BaseModel):
 
 
 class UpdateProfileSettingsRequest(BaseModel):
-    # Optional/partial — None means "leave unchanged". Only fluency_threshold
-    # exists yet; later progress-page stages (daily_goal, etc.) extend this
-    # same request/endpoint rather than adding a new one per setting.
+    # Optional/partial — None on any field means "leave unchanged". Later
+    # progress-page stages extend this same request/endpoint rather than
+    # adding a new one per setting.
     fluency_threshold: int | None = Field(default=None, ge=1, le=50)
+    daily_goal: int | None = Field(default=None, ge=1, le=200)
 
 
 # ---------------------------------------------------------------------------
@@ -239,5 +241,12 @@ class AnswerResponse(BaseModel):
 
 class ProgressOut(BaseModel):
     words_seen: int
-    words_known: int
+    words_fluent: int
+    # Bank-wide (not profile-specific) count of verified words — the
+    # denominator for the progress bar's fluent/total ratio.
+    total_verified_words: int
     current_streak: int
+    longest_streak: int
+    due_today: int
+    daily_goal: int
+    today_review_count: int

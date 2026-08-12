@@ -10,6 +10,7 @@ export interface ProfilePublic {
   native_lang: Lang;
   target_lang: Lang;
   fluency_threshold: number;
+  daily_goal: number;
 }
 
 // Level 0 — the original passive reveal-and-self-rate card.
@@ -85,8 +86,13 @@ export interface AnswerResponse {
 
 export interface ProgressOut {
   words_seen: number;
-  words_known: number;
+  words_fluent: number;
+  total_verified_words: number;
   current_streak: number;
+  longest_streak: number;
+  due_today: number;
+  daily_goal: number;
+  today_review_count: number;
 }
 
 export interface LoginResponse {

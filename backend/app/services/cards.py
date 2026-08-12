@@ -7,12 +7,12 @@ hardcoded to "Hebrew learner" vs "Spanish learner" by name, so a future
 third profile or a flipped direction is just a new Profile row.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Profile, RecentMiss, UserWordProgress, WordPair
+from app.models import DailyActivity, Profile, RecentMiss, UserWordProgress, WordPair
 from app.schemas import AnswerResponse, CardResponse, RateResponse, RatingResult
 from app.services import exercise_ladder, review_games
 from app.services.review import compute_next_state
@@ -165,7 +165,28 @@ def _apply_result(
     )
     profile.current_streak = streak.current_streak
     profile.last_activity_date = streak.last_activity_date
+    profile.longest_streak = max(profile.longest_streak, streak.current_streak)
     profile.total_reviews += 1
+
+    _record_daily_activity(db, profile, correct=correct, today=now.date())
+
+
+def _record_daily_activity(db: Session, profile: Profile, *, correct: bool, today: date) -> None:
+    """Upserts today's row — same find-or-create shape as
+    _get_or_create_progress. Backs the progress page's daily-goal card and
+    later feature-pass stages (activity calendar, weekly summary), which
+    all read this same table rather than each keeping their own tally.
+    """
+    activity = db.scalar(
+        select(DailyActivity).where(DailyActivity.profile_id == profile.id, DailyActivity.activity_date == today)
+    )
+    if activity is None:
+        activity = DailyActivity(profile_id=profile.id, activity_date=today, review_count=0, correct_count=0)
+        db.add(activity)
+        db.flush()
+    activity.review_count += 1
+    if correct:
+        activity.correct_count += 1
 
 
 def rate_word(db: Session, profile: Profile, word_pair_id: int, result: RatingResult) -> RateResponse:

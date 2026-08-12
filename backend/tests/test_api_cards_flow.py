@@ -70,7 +70,7 @@ def test_full_card_flow_fetch_rate_progress(client, db_session):
     progress = progress_resp.json()
     assert progress["words_seen"] == 1
     assert progress["current_streak"] == 1
-    assert progress["words_known"] == 0  # box 1 hasn't crossed the known threshold yet
+    assert progress["words_fluent"] == 0  # repetitions=1 hasn't crossed the default threshold (3) yet
 
 
 def test_login_with_wrong_pin_rejected(client, db_session):
