@@ -43,8 +43,14 @@ class Profile(Base):
     last_activity_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Lifetime count of ratings/answers of any exercise type — drives the
-    # recovery-round (every 15) and mixed-round (every 100) triggers.
+    # recovery-round (every 15) and mixed-round (every 30) triggers.
     total_reviews: Mapped[int] = mapped_column(Integer, default=0)
+
+    # How many times a word must be marked/answered "knew it" (see
+    # UserWordProgress.status) before it counts as fluent and leaves the
+    # normal deck — see app.services.cards._apply_result. User-editable at
+    # any time via PATCH /api/profiles/me, not just at creation.
+    fluency_threshold: Mapped[int] = mapped_column(Integer, default=3)
 
 
 class WordPair(Base):
@@ -133,6 +139,22 @@ class UserWordProgress(Base):
     # the transition logic.
     exercise_level: Mapped[int] = mapped_column(Integer, default=0)
     exercise_level_streak: Mapped[int] = mapped_column(Integer, default=0)
+
+    # "new" | "learning" | "fluent" — recomputed on every rate/answer from
+    # `repetitions` vs. the profile's `fluency_threshold` (see
+    # app.services.cards._apply_result). "new" is effectively transient: a
+    # row is only ever created together with its first rating in the same
+    # request, so it's overwritten to "learning"/"fluent" before anything
+    # ever reads it back — it exists mainly as the honest pre-first-rating
+    # default. Recomputing on every write (rather than a one-way ratchet)
+    # is deliberate: a fluent word that gets missed in a mixed round drops
+    # back to "learning" and re-enters the normal deck automatically,
+    # which is the whole point of testing it periodically.
+    status: Mapped[str] = mapped_column(String(16), default="new")
+    # Set when status transitions TO "fluent"; cleared when it drops back
+    # out. Powers "became fluent this week" in the weekly summary — a
+    # later feature stage, not read anywhere yet.
+    fluent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     word_pair: Mapped["WordPair"] = relationship(lazy="joined")
 

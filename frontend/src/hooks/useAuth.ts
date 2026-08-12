@@ -32,5 +32,13 @@ export function useAuth() {
     setProfile(null);
   }, []);
 
-  return { profile, login, logout, isAuthenticated: profile !== null };
+  // Called after any settings update (e.g. PATCH /api/profiles/me) so the
+  // cached profile — and every component reading it — reflects the change
+  // immediately, without a re-login.
+  const updateProfile = useCallback((updated: ProfilePublic) => {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(updated));
+    setProfile(updated);
+  }, []);
+
+  return { profile, login, logout, updateProfile, isAuthenticated: profile !== null };
 }

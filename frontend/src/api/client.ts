@@ -81,4 +81,10 @@ export const api = {
     }),
 
   getProgress: () => request<ProgressOut>("/api/progress"),
+
+  updateSettings: (settings: { fluency_threshold?: number }) =>
+    request<ProfilePublic>("/api/profiles/me", {
+      method: "PATCH",
+      body: JSON.stringify(settings),
+    }),
 };

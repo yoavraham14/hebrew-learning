@@ -26,12 +26,16 @@ def _utcnow() -> datetime:
 def get_next_card(db: Session, profile: Profile) -> CardResponse | None:
     now = _utcnow()
 
-    # 1. A due review, soonest first.
+    # 1. A due review, soonest first. Fluent words are excluded entirely —
+    # they've graduated out of the normal deck (fluency feature — see
+    # UserWordProgress.status); the mixed round is the only place they
+    # still resurface, to periodically confirm they haven't been forgotten.
     due = db.scalar(
         select(UserWordProgress)
         .where(
             UserWordProgress.profile_id == profile.id,
             UserWordProgress.next_review_at <= now,
+            UserWordProgress.status != "fluent",
         )
         .order_by(UserWordProgress.next_review_at.asc())
         .limit(1)
@@ -59,10 +63,12 @@ def get_next_card(db: Session, profile: Profile) -> CardResponse | None:
     # 3. Bank exhausted for this profile (shouldn't normally happen — the
     # top-up job keeps unseen words above threshold) and nothing is due yet.
     # Fall back to the soonest upcoming review so the continuous deck never
-    # dead-ends on a blank screen.
+    # dead-ends on a blank screen — still excluding fluent words; if
+    # everything left is fluent, there's genuinely nothing left to serve in
+    # the normal deck (return None below), which is correct, not a bug.
     upcoming = db.scalar(
         select(UserWordProgress)
-        .where(UserWordProgress.profile_id == profile.id)
+        .where(UserWordProgress.profile_id == profile.id, UserWordProgress.status != "fluent")
         .order_by(UserWordProgress.next_review_at.asc())
         .limit(1)
     )
@@ -93,6 +99,7 @@ def _get_or_create_progress(db: Session, profile: Profile, word_pair_id: int, no
             first_seen_at=now,
             times_seen=0,
             times_correct=0,
+            status="new",
         )
         db.add(progress)
         db.flush()
@@ -132,6 +139,21 @@ def _apply_result(
     )
     progress.exercise_level = transition.exercise_level
     progress.exercise_level_streak = transition.exercise_level_streak
+
+    # Fluency status — recomputed from scratch on every rating, not a
+    # one-way ratchet: a fluent word that gets missed (in a mixed round,
+    # the only place it can still appear) has repetitions reset to 0 by
+    # compute_next_state above, drops back to "learning" here, and
+    # re-enters the normal deck automatically. That's the point of
+    # periodically re-testing fluent words, not a bug.
+    was_fluent = progress.status == "fluent"
+    if progress.repetitions >= profile.fluency_threshold:
+        progress.status = "fluent"
+        if not was_fluent:
+            progress.fluent_at = now
+    else:
+        progress.status = "learning"
+        progress.fluent_at = None
 
     if not correct:
         db.add(RecentMiss(profile_id=profile.id, word_pair_id=progress.word_pair_id, missed_at=now))

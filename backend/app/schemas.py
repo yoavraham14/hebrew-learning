@@ -112,6 +112,7 @@ class ProfilePublicOut(BaseModel):
     display_name: str
     native_lang: str
     target_lang: str
+    fluency_threshold: int
 
     model_config = {"from_attributes": True}
 
@@ -120,6 +121,13 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     profile: ProfilePublicOut
+
+
+class UpdateProfileSettingsRequest(BaseModel):
+    # Optional/partial — None means "leave unchanged". Only fluency_threshold
+    # exists yet; later progress-page stages (daily_goal, etc.) extend this
+    # same request/endpoint rather than adding a new one per setting.
+    fluency_threshold: int | None = Field(default=None, ge=1, le=50)
 
 
 # ---------------------------------------------------------------------------

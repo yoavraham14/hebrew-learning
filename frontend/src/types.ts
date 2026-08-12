@@ -9,6 +9,7 @@ export interface ProfilePublic {
   display_name: string;
   native_lang: Lang;
   target_lang: Lang;
+  fluency_threshold: number;
 }
 
 // Level 0 — the original passive reveal-and-self-rate card.

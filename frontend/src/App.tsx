@@ -4,11 +4,21 @@ import { StreakBadge } from "./components/StreakBadge";
 import { useAuth } from "./hooks/useAuth";
 import { ProfilePicker } from "./pages/ProfilePicker";
 import { ProgressPage } from "./pages/ProgressPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { StudyPage } from "./pages/StudyPage";
+import type { ProfilePublic } from "./types";
 
-type View = "study" | "progress";
+type View = "study" | "progress" | "settings";
 
-function AuthenticatedApp({ displayName, onLogout }: { displayName: string; onLogout: () => void }) {
+function AuthenticatedApp({
+  profile,
+  onLogout,
+  onUpdateProfile,
+}: {
+  profile: ProfilePublic;
+  onLogout: () => void;
+  onUpdateProfile: (updated: ProfilePublic) => void;
+}) {
   const [view, setView] = useState<View>("study");
   const [streak, setStreak] = useState<number | null>(null);
 
@@ -26,7 +36,7 @@ function AuthenticatedApp({ displayName, onLogout }: { displayName: string; onLo
       <header className="flex items-center justify-between px-4 py-4 sm:px-6">
         <div>
           <p className="text-sm text-parchment/50">Studying as</p>
-          <p className="font-semibold">{displayName}</p>
+          <p className="font-semibold">{profile.display_name}</p>
         </div>
         <div className="flex items-center gap-3">
           {streak !== null && <StreakBadge streak={streak} />}
@@ -41,7 +51,7 @@ function AuthenticatedApp({ displayName, onLogout }: { displayName: string; onLo
       </header>
 
       <nav className="flex gap-2 px-4 pb-2 sm:px-6">
-        {(["study", "progress"] as const).map((v) => (
+        {(["study", "progress", "settings"] as const).map((v) => (
           <button
             key={v}
             type="button"
@@ -55,17 +65,21 @@ function AuthenticatedApp({ displayName, onLogout }: { displayName: string; onLo
         ))}
       </nav>
 
-      <main className="flex flex-1 flex-col">{view === "study" ? <StudyPage /> : <ProgressPage />}</main>
+      <main className="flex flex-1 flex-col">
+        {view === "study" && <StudyPage />}
+        {view === "progress" && <ProgressPage />}
+        {view === "settings" && <SettingsPage profile={profile} onUpdate={onUpdateProfile} />}
+      </main>
     </div>
   );
 }
 
 export default function App() {
-  const { profile, login, logout, isAuthenticated } = useAuth();
+  const { profile, login, logout, updateProfile, isAuthenticated } = useAuth();
 
   if (!isAuthenticated || !profile) {
     return <ProfilePicker onLogin={login} />;
   }
 
-  return <AuthenticatedApp displayName={profile.display_name} onLogout={logout} />;
+  return <AuthenticatedApp profile={profile} onLogout={logout} onUpdateProfile={updateProfile} />;
 }

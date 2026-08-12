@@ -11,11 +11,13 @@ router = APIRouter(prefix="/api/cards", tags=["cards"])
 def next_card(profile: CurrentProfile, db: DbSession) -> CardResponse:
     card = get_next_card(db, profile)
     if card is None:
-        # Bank is completely empty — bootstrap/top-up hasn't produced
-        # anything yet (e.g. first ever startup, still generating).
+        # Either the bank is completely empty (bootstrap/top-up hasn't
+        # produced anything yet) or every word this profile has is fluent
+        # (nothing left for the normal deck — not an error, just nothing to
+        # show right now; the mixed round is still where those resurface).
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="No words available yet — the word bank is still being generated. Try again shortly.",
+            detail="No new or due words right now — try again shortly, or wait for a review round.",
         )
     return card
 
