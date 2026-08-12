@@ -6,9 +6,13 @@ import { ProfilePicker } from "./pages/ProfilePicker";
 import { ProgressPage } from "./pages/ProgressPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StudyPage } from "./pages/StudyPage";
+import { WordTablePage } from "./pages/WordTablePage";
 import type { ProfilePublic } from "./types";
 
-type View = "study" | "progress" | "settings";
+// "words" is reached by clicking the Seen stat tile, not from the main
+// nav — it behaves like a drill-down (has its own Back button) rather
+// than a peer tab.
+type View = "study" | "progress" | "settings" | "words";
 
 function AuthenticatedApp({
   profile,
@@ -67,8 +71,9 @@ function AuthenticatedApp({
 
       <main className="flex flex-1 flex-col">
         {view === "study" && <StudyPage />}
-        {view === "progress" && <ProgressPage />}
+        {view === "progress" && <ProgressPage onOpenWords={() => setView("words")} />}
         {view === "settings" && <SettingsPage profile={profile} onUpdate={onUpdateProfile} />}
+        {view === "words" && <WordTablePage onBack={() => setView("progress")} />}
       </main>
     </div>
   );

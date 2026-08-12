@@ -89,7 +89,9 @@ def correct_answer_text(profile: Profile, word_pair: WordPair, *, level: int) ->
     return text
 
 
-def build_reveal_card(profile: Profile, word_pair: WordPair, *, is_review: bool) -> RevealCardOut:
+def build_reveal_card(
+    profile: Profile, word_pair: WordPair, *, is_review: bool, starred: bool = False
+) -> RevealCardOut:
     native_lang: Lang = profile.native_lang  # type: ignore[assignment]
     target_lang: Lang = profile.target_lang  # type: ignore[assignment]
     prompt, _ = _text_and_phonetic(profile, word_pair, native_lang)
@@ -99,6 +101,7 @@ def build_reveal_card(profile: Profile, word_pair: WordPair, *, is_review: bool)
     return RevealCardOut(
         word_pair_id=word_pair.id,
         is_review=is_review,
+        starred=starred,
         part_of_speech=word_pair.part_of_speech,
         cefr_level=word_pair.cefr_level,
         topic=word_pair.topic,
@@ -160,7 +163,13 @@ def _build_options(db: Session, profile: Profile, word_pair: WordPair, *, lang: 
 
 
 def build_multiple_choice_card(
-    db: Session, profile: Profile, word_pair: WordPair, *, exercise_type: str, is_review: bool
+    db: Session,
+    profile: Profile,
+    word_pair: WordPair,
+    *,
+    exercise_type: str,
+    is_review: bool,
+    starred: bool = False,
 ) -> MultipleChoiceCardOut:
     native_lang: Lang = profile.native_lang  # type: ignore[assignment]
     target_lang: Lang = profile.target_lang  # type: ignore[assignment]
@@ -195,6 +204,7 @@ def build_multiple_choice_card(
         exercise_type=exercise_type,
         word_pair_id=word_pair.id,
         is_review=is_review,
+        starred=starred,
         part_of_speech=word_pair.part_of_speech,
         cefr_level=word_pair.cefr_level,
         topic=word_pair.topic,
@@ -208,8 +218,12 @@ def build_multiple_choice_card(
     )
 
 
-def build_card(db: Session, profile: Profile, word_pair: WordPair, *, level: int, is_review: bool) -> CardResponse:
+def build_card(
+    db: Session, profile: Profile, word_pair: WordPair, *, level: int, is_review: bool, starred: bool = False
+) -> CardResponse:
     if level <= 0:
-        return build_reveal_card(profile, word_pair, is_review=is_review)
+        return build_reveal_card(profile, word_pair, is_review=is_review, starred=starred)
     exercise_type = LEVEL_NAMES[min(level, MAX_LEVEL)]
-    return build_multiple_choice_card(db, profile, word_pair, exercise_type=exercise_type, is_review=is_review)
+    return build_multiple_choice_card(
+        db, profile, word_pair, exercise_type=exercise_type, is_review=is_review, starred=starred
+    )

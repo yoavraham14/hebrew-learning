@@ -41,7 +41,9 @@ def get_next_card(db: Session, profile: Profile) -> CardResponse | None:
         .limit(1)
     )
     if due is not None:
-        return exercise_ladder.build_card(db, profile, due.word_pair, level=due.exercise_level, is_review=True)
+        return exercise_ladder.build_card(
+            db, profile, due.word_pair, level=due.exercise_level, is_review=True, starred=due.starred
+        )
 
     # 2. A word this profile hasn't seen yet. Only verified words are ever
     # served as new material (SPEC.md-adjacent — see the translation-
@@ -74,13 +76,18 @@ def get_next_card(db: Session, profile: Profile) -> CardResponse | None:
     )
     if upcoming is not None:
         return exercise_ladder.build_card(
-            db, profile, upcoming.word_pair, level=upcoming.exercise_level, is_review=True
+            db,
+            profile,
+            upcoming.word_pair,
+            level=upcoming.exercise_level,
+            is_review=True,
+            starred=upcoming.starred,
         )
 
     return None
 
 
-def _get_or_create_progress(db: Session, profile: Profile, word_pair_id: int, now: datetime) -> UserWordProgress:
+def get_or_create_progress(db: Session, profile: Profile, word_pair_id: int, now: datetime) -> UserWordProgress:
     progress = db.scalar(
         select(UserWordProgress).where(
             UserWordProgress.profile_id == profile.id,
@@ -126,6 +133,12 @@ def _apply_result(
     progress.ease_factor = ladder.ease_factor
     progress.interval_days = ladder.interval_days
     progress.next_review_at = ladder.next_review_at
+    if progress.starred:
+        # Starred words resurface more often — dead simple fixed halving of
+        # the ladder's own interval, not a separate scheduling system (same
+        # "no adaptive scheduling" spirit as the review-game trigger
+        # numbers). Only shortens; never used to lengthen an interval.
+        progress.next_review_at = now + (ladder.next_review_at - now) / 2
     progress.last_result = result
     progress.times_seen += 1
     if correct:
@@ -173,7 +186,7 @@ def _apply_result(
 
 def _record_daily_activity(db: Session, profile: Profile, *, correct: bool, today: date) -> None:
     """Upserts today's row — same find-or-create shape as
-    _get_or_create_progress. Backs the progress page's daily-goal card and
+    get_or_create_progress. Backs the progress page's daily-goal card and
     later feature-pass stages (activity calendar, weekly summary), which
     all read this same table rather than each keeping their own tally.
     """
@@ -192,7 +205,7 @@ def _record_daily_activity(db: Session, profile: Profile, *, correct: bool, toda
 def rate_word(db: Session, profile: Profile, word_pair_id: int, result: RatingResult) -> RateResponse:
     """Self-rated path — level 0 (reveal) cards only."""
     now = _utcnow()
-    progress = _get_or_create_progress(db, profile, word_pair_id, now)
+    progress = get_or_create_progress(db, profile, word_pair_id, now)
 
     # `correct` mirrors review.LadderResult.correct: "knew_it" only. This is
     # also what drives exercise-level promotion for reveal cards — an
@@ -216,7 +229,7 @@ def answer_word(db: Session, profile: Profile, word_pair_id: int, selected_word_
     audio_only/fill_blank) cards, and review-game round cards.
     """
     now = _utcnow()
-    progress = _get_or_create_progress(db, profile, word_pair_id, now)
+    progress = get_or_create_progress(db, profile, word_pair_id, now)
 
     # Capture the level the card was actually shown at *before* this
     # answer's transition mutates it — that's the language correct_text

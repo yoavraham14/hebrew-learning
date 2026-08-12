@@ -1,26 +1,43 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { FluencyProgressBar } from "../components/FluencyProgressBar";
-import type { ProgressOut } from "../types";
+import { isHebrewText } from "../lib/text";
+import type { ProgressOut, WordProgress } from "../types";
 
 function StatTile({
   label,
   value,
   accent,
   sublabel,
+  onClick,
 }: {
   label: string;
   value: string | number;
   accent: string;
   sublabel?: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div className="flex flex-col items-center gap-1 rounded-2xl bg-surface px-4 py-6 text-center">
+  const content = (
+    <>
       <span className={`text-4xl font-bold tabular-nums ${accent}`}>{value}</span>
       <span className="text-sm text-parchment/60">{label}</span>
       {sublabel && <span className="text-xs text-parchment/40">{sublabel}</span>}
-    </div>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex flex-col items-center gap-1 rounded-2xl bg-surface px-4 py-6 text-center transition-colors hover:bg-surfacemuted"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className="flex flex-col items-center gap-1 rounded-2xl bg-surface px-4 py-6 text-center">{content}</div>;
 }
 
 function DailyGoalTile({ today, goal }: { today: number; goal: number }) {
@@ -42,8 +59,40 @@ function DailyGoalTile({ today, goal }: { today: number; goal: number }) {
   );
 }
 
-export function ProgressPage() {
+const MIN_TIMES_SEEN_FOR_HARDEST = 3;
+
+function HardestWordsCard({ words }: { words: WordProgress[] }) {
+  const hardest = [...words]
+    .filter((w) => w.times_seen >= MIN_TIMES_SEEN_FOR_HARDEST)
+    .sort((a, b) => a.accuracy - b.accuracy)
+    .slice(0, 5);
+
+  return (
+    <div className="rounded-2xl bg-surface p-5">
+      <p className="text-sm font-semibold uppercase tracking-wider text-bridge">Hardest words</p>
+      {hardest.length === 0 ? (
+        <p className="mt-3 text-sm text-parchment/50">
+          Not enough data yet — words need {MIN_TIMES_SEEN_FOR_HARDEST}+ reviews to show up here.
+        </p>
+      ) : (
+        <ul className="mt-3 flex flex-col gap-2">
+          {hardest.map((w) => (
+            <li key={w.word_pair_id} className="flex items-center justify-between text-sm">
+              <span dir={isHebrewText(w.hebrew_word) ? "rtl" : "ltr"} className="font-medium">
+                {w.hebrew_word} <span className="text-parchment/50">· {w.spanish_word}</span>
+              </span>
+              <span className="tabular-nums text-danger">{w.accuracy}%</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function ProgressPage({ onOpenWords }: { onOpenWords: () => void }) {
   const [progress, setProgress] = useState<ProgressOut | null>(null);
+  const [words, setWords] = useState<WordProgress[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,6 +100,7 @@ export function ProgressPage() {
       .getProgress()
       .then(setProgress)
       .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "Couldn't load progress."));
+    api.getWords().then(setWords).catch(() => undefined); // hardest-words card just stays empty on failure
   }, []);
 
   return (
@@ -65,7 +115,7 @@ export function ProgressPage() {
             <FluencyProgressBar fluent={progress.words_fluent} total={progress.total_verified_words} />
 
             <div className="grid grid-cols-2 gap-3">
-              <StatTile label="Seen" value={progress.words_seen} accent="text-bridge" />
+              <StatTile label="Seen" value={progress.words_seen} accent="text-bridge" onClick={onOpenWords} />
               <StatTile label="Due today" value={progress.due_today} accent="text-almost" />
               <StatTile
                 label="Streak"
@@ -75,6 +125,8 @@ export function ProgressPage() {
               />
               <DailyGoalTile today={progress.today_review_count} goal={progress.daily_goal} />
             </div>
+
+            {words && <HardestWordsCard words={words} />}
           </>
         )}
       </div>

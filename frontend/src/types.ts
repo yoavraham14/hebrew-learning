@@ -18,6 +18,7 @@ export interface RevealCardOut {
   exercise_type: "reveal";
   word_pair_id: number;
   is_review: boolean;
+  starred: boolean;
   part_of_speech: string;
   cefr_level: string;
   topic: string;
@@ -45,6 +46,7 @@ export interface MultipleChoiceCardOut {
   exercise_type: "multiple_choice" | "reverse" | "audio_only" | "fill_blank";
   word_pair_id: number;
   is_review: boolean;
+  starred: boolean;
   part_of_speech: string;
   cefr_level: string;
   topic: string;
@@ -93,6 +95,22 @@ export interface ProgressOut {
   due_today: number;
   daily_goal: number;
   today_review_count: number;
+}
+
+export interface WordProgress {
+  word_pair_id: number;
+  hebrew_word: string;
+  spanish_word: string;
+  english_word: string;
+  phonetic_es: string;
+  topic: string;
+  cefr_level: string;
+  status: "new" | "learning" | "fluent";
+  starred: boolean;
+  times_seen: number;
+  times_correct: number;
+  accuracy: number;
+  fluent_at: string | null;
 }
 
 export interface LoginResponse {

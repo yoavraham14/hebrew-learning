@@ -20,7 +20,13 @@ export function RevealExercise({
 
   return (
     <div className="w-full rounded-3xl bg-surface p-6 shadow-2xl shadow-black/30 sm:p-8">
-      <CardHeader topic={card.topic} cefrLevel={card.cefr_level} isReview={card.is_review} />
+      <CardHeader
+        topic={card.topic}
+        cefrLevel={card.cefr_level}
+        isReview={card.is_review}
+        wordPairId={card.word_pair_id}
+        starred={card.starred}
+      />
 
       <div className="flex flex-col items-center gap-2 py-6 text-center">
         <p className="text-sm font-medium text-parchment/50">{card.part_of_speech}</p>

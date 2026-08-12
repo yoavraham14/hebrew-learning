@@ -146,6 +146,7 @@ class RevealCardOut(BaseModel):
     exercise_type: Literal["reveal"] = "reveal"
     word_pair_id: int
     is_review: bool
+    starred: bool = False
     part_of_speech: str
     cefr_level: str
     topic: str
@@ -179,6 +180,7 @@ class MultipleChoiceCardOut(BaseModel):
     exercise_type: Literal["multiple_choice", "reverse", "audio_only", "fill_blank"]
     word_pair_id: int
     is_review: bool
+    starred: bool = False
     part_of_speech: str
     cefr_level: str
     topic: str
@@ -250,3 +252,33 @@ class ProgressOut(BaseModel):
     due_today: int
     daily_goal: int
     today_review_count: int
+
+
+# ---------------------------------------------------------------------------
+# Word table (progress-page feature pass, stage D) — every word this
+# profile has seen, with per-word stats. Sorting/searching is client-side
+# (the word bank is small by design — see SPEC.md), so this is a flat list,
+# not a paginated/filterable query.
+# ---------------------------------------------------------------------------
+
+
+class WordProgressOut(BaseModel):
+    word_pair_id: int
+    hebrew_word: str
+    spanish_word: str
+    english_word: str
+    phonetic_es: str
+    topic: str
+    cefr_level: str
+    status: str  # "new" | "learning" | "fluent"
+    starred: bool
+    times_seen: int
+    times_correct: int
+    accuracy: float  # 0-100, times_correct/times_seen — 0 if never seen
+    fluent_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class SetStarredRequest(BaseModel):
+    starred: bool

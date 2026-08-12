@@ -6,6 +6,7 @@ import type {
   ProgressOut,
   RateResponse,
   RatingResult,
+  WordProgress,
 } from "../types";
 
 // Vite only exposes VITE_-prefixed vars, read at build time. See
@@ -86,5 +87,19 @@ export const api = {
     request<ProfilePublic>("/api/profiles/me", {
       method: "PATCH",
       body: JSON.stringify(settings),
+    }),
+
+  getWords: () => request<WordProgress[]>("/api/progress/words"),
+
+  markWordFluent: (wordPairId: number) =>
+    request<WordProgress>(`/api/progress/words/${wordPairId}/mark-fluent`, { method: "POST" }),
+
+  resetWord: (wordPairId: number) =>
+    request<WordProgress>(`/api/progress/words/${wordPairId}/reset`, { method: "POST" }),
+
+  setStarred: (wordPairId: number, starred: boolean) =>
+    request<WordProgress>(`/api/progress/words/${wordPairId}/star`, {
+      method: "POST",
+      body: JSON.stringify({ starred }),
     }),
 };

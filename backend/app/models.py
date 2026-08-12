@@ -164,6 +164,11 @@ class UserWordProgress(Base):
     # later feature stage, not read anywhere yet.
     fluent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # User preference, not learning progress — untouched by a per-word
+    # reset (see app.services.progress.reset_word). Starred words get a
+    # shorter resurfacing interval — see app.services.cards._apply_result.
+    starred: Mapped[bool] = mapped_column(Boolean, default=False)
+
     word_pair: Mapped["WordPair"] = relationship(lazy="joined")
 
 
