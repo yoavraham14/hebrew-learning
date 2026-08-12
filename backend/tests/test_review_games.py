@@ -84,8 +84,8 @@ def test_mixed_round_triggers_at_multiple_of_100(db_session):
 
 
 def test_mixed_round_takes_priority_over_recovery_on_coincidence(db_session):
-    # 300 is a multiple of both 15 and 100 — mixed must win.
-    total = RECOVERY_EVERY * MIXED_EVERY // _gcd(RECOVERY_EVERY, MIXED_EVERY)  # least common multiple = 300
+    # The LCM of RECOVERY_EVERY and MIXED_EVERY is a multiple of both — mixed must win.
+    total = RECOVERY_EVERY * MIXED_EVERY // _gcd(RECOVERY_EVERY, MIXED_EVERY)  # least common multiple
     profile = _profile(db_session, total_reviews=total)
     word = _word(db_session, 1)
     db_session.add(RecentMiss(profile_id=profile.id, word_pair_id=word.id, missed_at=datetime.now(timezone.utc)))

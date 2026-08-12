@@ -8,8 +8,11 @@ of exercise type.
   served — a miss is only ever offered in one recovery round.
 - Mixed round: every MIXED_EVERY-th review, a broader refresher drawn from
   due/near-due words across the whole deck — not itself scoped to misses,
-  and nothing is consumed.
-- Mixed takes priority when both land on the same review (e.g. #300).
+  and nothing is consumed. Also the only place a fluent word (§ progress
+  feature pass — see UserWordProgress.status) can resurface once it's
+  graduated out of the normal deck; the query here was never filtered by
+  status, so that falls out for free.
+- Mixed takes priority when both land on the same review (e.g. #30, #60).
 
 Rounds are delivered as a side-channel (`round_due`) on the RateResponse/
 AnswerResponse of the review that triggered them, not as a separate
@@ -28,7 +31,7 @@ from app.services import exercise_ladder
 
 RECOVERY_EVERY = 15
 RECOVERY_ROUND_SIZE = 5
-MIXED_EVERY = 100
+MIXED_EVERY = 30
 MIXED_ROUND_SIZE = 8
 
 
