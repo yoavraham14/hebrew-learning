@@ -49,21 +49,39 @@ echo -n "YOUR_SPANISH_LEARNER_PIN" | gcloud secrets create SPANISH_LEARNER_PIN -
 
 ## 2. Run migrations against Supabase (one time, and after every future migration)
 
-**Use the DIRECT connection (port `5432`), not the pooler (`6543`), for
-this** — Alembic's DDL/locking doesn't play well with PgBouncer's
-transaction-mode pooling. Run from your own machine, not inside the
-deployed container:
+**Use the Session pooler (port `5432`, via the pooler hostname), not the
+Direct connection and not the Transaction pooler (`6543`), for this:**
+
+- The **Direct connection** (`db.<project-ref>.supabase.co`) is IPv6-only
+  unless you've bought Supabase's IPv4 add-on — confirmed live: it fails
+  with a DNS resolution error on any network without an outbound IPv6
+  route, which is common (this is a known, frequently-hit Supabase gotcha,
+  not a one-off).
+- The **Transaction pooler** (`6543`, what the deployed app uses at
+  runtime — see `.env.example`) doesn't suit Alembic: PgBouncer's
+  transaction-mode pooling doesn't support the session-level features
+  (prepared statements, multi-statement DDL transactions) migrations need.
+- The **Session pooler** is the one that actually works for this: same
+  pooler hostname as the transaction pooler, same IPv4 compatibility, but
+  port `5432` and PgBouncer in session mode — behaves like a real direct
+  connection for Alembic's purposes without the IPv6 requirement.
+
+Run from your own machine, not inside the deployed container:
 
 ```sh
 cd backend
-DATABASE_URL="postgresql+psycopg://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require" \
+DATABASE_URL="postgresql+psycopg://postgres.<project-ref>:<password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require" \
   alembic upgrade head
 
-# One-time also: seed the two profile PINs (same direct-connection pattern)
-DATABASE_URL="postgresql+psycopg://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require" \
+# One-time also: seed the two profile PINs (same session-pooler connection)
+DATABASE_URL="postgresql+psycopg://postgres.<project-ref>:<password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require" \
   HEBREW_LEARNER_PIN=... SPANISH_LEARNER_PIN=... \
   python -m app.scripts.seed_profiles
 ```
+
+Note the username shape difference from the direct connection: it's
+`postgres.<project-ref>` (matching the transaction pooler's convention),
+not plain `postgres`.
 
 ## 3. Build and push the image
 

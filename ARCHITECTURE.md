@@ -419,8 +419,8 @@ builds the React frontend, `python:3.12-slim` runs FastAPI and serves the
 built frontend as static files from the same process). No nginx/Caddy in
 front of it — Cloud Run terminates TLS and handles routing itself. Postgres
 is Supabase, entirely external to Cloud Run; `DATABASE_URL` just points at
-it (pooler connection, port `6543`, for the app's runtime traffic — see
-below for why migrations use the direct connection instead).
+it (Transaction pooler, port `6543`, for the app's runtime traffic — see
+below for why migrations use the Session pooler instead).
 
 ```
 Browser ──HTTPS──► Cloud Run (single container: FastAPI + static React)
@@ -468,14 +468,23 @@ closed**: unset secret means every request is rejected, never accidentally
 open. This is app-level auth, not the profile JWT — Cloud Scheduler isn't a
 user.
 
-### Migrations: direct connection, not the pooler
+### Migrations: Session pooler, neither Direct nor Transaction pooler
 
-`alembic upgrade head` is run manually from a developer machine against
-Supabase's **direct** connection (port `5432`), not the pooler (`6543`) the
-running app uses — PgBouncer's transaction-mode pooling doesn't play well
-with Alembic's DDL/locking. Never baked into container startup: Cloud Run
-can start multiple instances around the same time, and racing migrations
-across instances is worth avoiding entirely rather than handling.
+`alembic upgrade head` is run manually from a developer machine, against
+Supabase's **Session pooler** (port `5432`, via the pooler hostname) —
+deliberately neither of the other two options:
+
+- Not the **Direct connection** (`db.<project-ref>.supabase.co`) — it's
+  IPv6-only unless you've bought Supabase's IPv4 add-on, and confirmed live
+  to fail outright (DNS resolution error) on any network without an
+  outbound IPv6 route. Common enough to not be a fringe case.
+- Not the **Transaction pooler** (`6543`, what the running app uses) —
+  PgBouncer's transaction-mode pooling doesn't support the session-level
+  features (prepared statements, multi-statement DDL) Alembic needs.
+
+Never baked into container startup either way: Cloud Run can start multiple
+instances around the same time, and racing migrations across instances is
+worth avoiding entirely rather than handling.
 
 ### What's still a real gap, not yet solved
 
