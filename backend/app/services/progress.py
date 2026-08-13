@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import DailyActivity, Profile, UserWordProgress, WordPair
-from app.schemas import ProgressOut, WordProgressOut
+from app.schemas import ActivityDayOut, ProgressOut, WeeklySummaryOut, WordProgressOut
 from app.services.cards import get_or_create_progress
 
 
@@ -162,3 +162,92 @@ def set_starred(db: Session, profile: Profile, word_pair_id: int, starred: bool)
     db.commit()
     db.refresh(progress)
     return _to_word_progress_out(progress)
+
+
+# ---------------------------------------------------------------------------
+# Activity calendar + weekly summary (stage E) — both read DailyActivity,
+# no new table.
+# ---------------------------------------------------------------------------
+
+
+def get_activity(db: Session, profile: Profile, *, days: int = 365) -> list[ActivityDayOut]:
+    """Daily activity for the last `days` days — the GitHub-style
+    contribution grid's data source. Only returns days that actually have a
+    row (i.e. had at least one review); the frontend fills in the gaps as
+    zero, so an empty list is a valid ("never studied") response, not an
+    error.
+    """
+    cutoff = _utcnow().date() - timedelta(days=days)
+    rows = db.scalars(
+        select(DailyActivity)
+        .where(DailyActivity.profile_id == profile.id, DailyActivity.activity_date >= cutoff)
+        .order_by(DailyActivity.activity_date.asc())
+    ).all()
+    return [ActivityDayOut.model_validate(row) for row in rows]
+
+
+def get_weekly_summary(db: Session, profile: Profile) -> WeeklySummaryOut:
+    """Past 7 days vs. the 7 before that (for the accuracy trend) — kept
+    deliberately simple: a handful of counts, not a dashboard. See
+    schemas.WeeklySummaryOut's accuracy fields for why 0.0 isn't an error.
+    """
+    today = _utcnow().date()
+    this_week_start = today - timedelta(days=6)  # 7 days inclusive of today
+    last_week_start = this_week_start - timedelta(days=7)
+    last_week_end = this_week_start - timedelta(days=1)
+
+    words_added = (
+        db.scalar(
+            select(func.count())
+            .select_from(UserWordProgress)
+            .where(
+                UserWordProgress.profile_id == profile.id,
+                UserWordProgress.first_seen_at.is_not(None),
+                func.date(UserWordProgress.first_seen_at) >= this_week_start,
+            )
+        )
+        or 0
+    )
+    words_became_fluent = (
+        db.scalar(
+            select(func.count())
+            .select_from(UserWordProgress)
+            .where(
+                UserWordProgress.profile_id == profile.id,
+                UserWordProgress.fluent_at.is_not(None),
+                func.date(UserWordProgress.fluent_at) >= this_week_start,
+            )
+        )
+        or 0
+    )
+
+    this_week_rows = db.scalars(
+        select(DailyActivity).where(
+            DailyActivity.profile_id == profile.id, DailyActivity.activity_date >= this_week_start
+        )
+    ).all()
+    last_week_rows = db.scalars(
+        select(DailyActivity).where(
+            DailyActivity.profile_id == profile.id,
+            DailyActivity.activity_date >= last_week_start,
+            DailyActivity.activity_date <= last_week_end,
+        )
+    ).all()
+
+    days_studied = sum(1 for r in this_week_rows if r.review_count > 0)
+    reviews_this_week = sum(r.review_count for r in this_week_rows)
+    correct_this_week = sum(r.correct_count for r in this_week_rows)
+    reviews_last_week = sum(r.review_count for r in last_week_rows)
+    correct_last_week = sum(r.correct_count for r in last_week_rows)
+
+    accuracy_this_week = round(correct_this_week / reviews_this_week * 100, 1) if reviews_this_week > 0 else 0.0
+    accuracy_last_week = round(correct_last_week / reviews_last_week * 100, 1) if reviews_last_week > 0 else 0.0
+
+    return WeeklySummaryOut(
+        words_added=words_added,
+        words_became_fluent=words_became_fluent,
+        days_studied=days_studied,
+        reviews_this_week=reviews_this_week,
+        accuracy_this_week=accuracy_this_week,
+        accuracy_last_week=accuracy_last_week,
+    )

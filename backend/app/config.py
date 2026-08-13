@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     # accidentally open. Set only in the Cloud Run deployment's env.
     internal_task_secret: str | None = None
 
+    # Password gating the destructive full-profile reset (POST
+    # /api/profiles/{slug}/reset — progress-page feature pass, stage G).
+    # Deliberately has a real default rather than failing closed like
+    # internal_task_secret: this is meant to be usable out of the box by
+    # the two actual users, not just after manual ops setup. Change it via
+    # env var if you want a different value; the default itself is never
+    # referenced anywhere else in source — only here.
+    reset_password: str = "Qaz13579"
+
     # --- Logging ---
     log_level: str = "INFO"
 

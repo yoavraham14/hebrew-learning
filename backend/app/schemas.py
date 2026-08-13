@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -282,3 +282,49 @@ class WordProgressOut(BaseModel):
 
 class SetStarredRequest(BaseModel):
     starred: bool
+
+
+# ---------------------------------------------------------------------------
+# Activity calendar + weekly summary (progress-page feature pass, stage E).
+# Both read DailyActivity — no new table, no new migration.
+# ---------------------------------------------------------------------------
+
+
+class ActivityDayOut(BaseModel):
+    activity_date: date
+    review_count: int
+    correct_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class WeeklySummaryOut(BaseModel):
+    words_added: int
+    words_became_fluent: int
+    days_studied: int
+    reviews_this_week: int
+    # 0-100. 0.0 when there's no data yet for that week, not an error —
+    # the frontend just doesn't show a trend arrow in that case.
+    accuracy_this_week: float
+    accuracy_last_week: float
+
+
+# ---------------------------------------------------------------------------
+# Add-user + full-profile reset (progress-page feature pass, stage G).
+# ---------------------------------------------------------------------------
+
+Direction = Literal["hebrew_learner", "spanish_learner"]
+
+
+class CreateProfileRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=64)
+    pin: str = Field(min_length=4, max_length=32)
+    direction: Direction
+
+
+class ResetProfileRequest(BaseModel):
+    password: str
+    # Must exactly equal "RESET" — backend-enforced, not just a frontend
+    # nicety, so the API itself refuses an accidental/scripted call that
+    # only got the password right.
+    confirmation: str

@@ -1,11 +1,14 @@
 import type {
+  ActivityDay,
   AnswerResponse,
   CardResponse,
+  Direction,
   LoginResponse,
   ProfilePublic,
   ProgressOut,
   RateResponse,
   RatingResult,
+  WeeklySummary,
   WordProgress,
 } from "../types";
 
@@ -101,5 +104,21 @@ export const api = {
     request<WordProgress>(`/api/progress/words/${wordPairId}/star`, {
       method: "POST",
       body: JSON.stringify({ starred }),
+    }),
+
+  getActivity: () => request<ActivityDay[]>("/api/progress/activity"),
+
+  getWeeklySummary: () => request<WeeklySummary>("/api/progress/weekly-summary"),
+
+  createProfile: (display_name: string, pin: string, direction: Direction) =>
+    request<ProfilePublic>("/api/profiles", {
+      method: "POST",
+      body: JSON.stringify({ display_name, pin, direction }),
+    }),
+
+  resetProfile: (slug: string, password: string, confirmation: string) =>
+    request<ProfilePublic>(`/api/profiles/${slug}/reset`, {
+      method: "POST",
+      body: JSON.stringify({ password, confirmation }),
     }),
 };

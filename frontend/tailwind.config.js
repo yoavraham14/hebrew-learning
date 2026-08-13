@@ -52,12 +52,21 @@ export default {
           "60%": { transform: "translateX(-3px)" },
           "80%": { transform: "translateX(2px)" },
         },
+        // Milestone celebration (10/50/100 fluent words) — a bigger sibling
+        // of correct-glow's pop, for the one moment on the whole progress
+        // page that's actually worth interrupting the user for.
+        "celebrate-pop": {
+          "0%": { transform: "scale(0.6)", opacity: "0" },
+          "60%": { transform: "scale(1.05)", opacity: "1" },
+          "100%": { transform: "scale(1)", opacity: "1" },
+        },
       },
       animation: {
         "reveal-glow": "reveal-glow 550ms ease-out",
         "reveal-rise": "reveal-rise 400ms ease-out both",
         "correct-glow": "correct-glow 500ms ease-out",
         "incorrect-shake": "incorrect-shake 400ms ease-out",
+        "celebrate-pop": "celebrate-pop 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both",
       },
     },
   },

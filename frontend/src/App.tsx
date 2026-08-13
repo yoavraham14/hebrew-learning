@@ -2,28 +2,33 @@ import { useEffect, useState } from "react";
 import { api } from "./api/client";
 import { StreakBadge } from "./components/StreakBadge";
 import { useAuth } from "./hooks/useAuth";
+import { HelpPage } from "./pages/HelpPage";
 import { ProfilePicker } from "./pages/ProfilePicker";
 import { ProgressPage } from "./pages/ProgressPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StudyPage } from "./pages/StudyPage";
+import { WeeklySummaryPage } from "./pages/WeeklySummaryPage";
 import { WordTablePage } from "./pages/WordTablePage";
 import type { ProfilePublic } from "./types";
 
-// "words" is reached by clicking the Seen stat tile, not from the main
-// nav — it behaves like a drill-down (has its own Back button) rather
-// than a peer tab.
-type View = "study" | "progress" | "settings" | "words";
+// "words" and "weekly" are reached by drilling down from Progress, not
+// from the main nav — they behave like detail screens (their own Back
+// button) rather than peer tabs. "help" is reached from the header's "?".
+type View = "study" | "progress" | "settings" | "words" | "weekly";
 
 function AuthenticatedApp({
   profile,
   onLogout,
   onUpdateProfile,
+  onSwitchProfile,
 }: {
   profile: ProfilePublic;
   onLogout: () => void;
   onUpdateProfile: (updated: ProfilePublic) => void;
+  onSwitchProfile: (slug: string, pin: string) => Promise<void>;
 }) {
   const [view, setView] = useState<View>("study");
+  const [showHelp, setShowHelp] = useState(false);
   const [streak, setStreak] = useState<number | null>(null);
 
   useEffect(() => {
@@ -44,6 +49,14 @@ function AuthenticatedApp({
         </div>
         <div className="flex items-center gap-3">
           {streak !== null && <StreakBadge streak={streak} />}
+          <button
+            type="button"
+            onClick={() => setShowHelp(true)}
+            aria-label="Help"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-surfacemuted text-sm font-bold text-parchment/70 hover:text-parchment"
+          >
+            ?
+          </button>
           <button
             type="button"
             onClick={onLogout}
@@ -71,10 +84,21 @@ function AuthenticatedApp({
 
       <main className="flex flex-1 flex-col">
         {view === "study" && <StudyPage />}
-        {view === "progress" && <ProgressPage onOpenWords={() => setView("words")} />}
-        {view === "settings" && <SettingsPage profile={profile} onUpdate={onUpdateProfile} />}
+        {view === "progress" && (
+          <ProgressPage
+            profileSlug={profile.slug}
+            onOpenWords={() => setView("words")}
+            onOpenWeeklySummary={() => setView("weekly")}
+          />
+        )}
+        {view === "settings" && (
+          <SettingsPage profile={profile} onUpdate={onUpdateProfile} onSwitchProfile={onSwitchProfile} />
+        )}
         {view === "words" && <WordTablePage onBack={() => setView("progress")} />}
+        {view === "weekly" && <WeeklySummaryPage onBack={() => setView("progress")} />}
       </main>
+
+      {showHelp && <HelpPage onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
@@ -86,5 +110,7 @@ export default function App() {
     return <ProfilePicker onLogin={login} />;
   }
 
-  return <AuthenticatedApp profile={profile} onLogout={logout} onUpdateProfile={updateProfile} />;
+  return (
+    <AuthenticatedApp profile={profile} onLogout={logout} onUpdateProfile={updateProfile} onSwitchProfile={login} />
+  );
 }

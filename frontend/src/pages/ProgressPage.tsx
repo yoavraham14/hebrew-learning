@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
+import { ActivityCalendar } from "../components/ActivityCalendar";
 import { FluencyProgressBar } from "../components/FluencyProgressBar";
+import { MilestoneCelebration } from "../components/MilestoneCelebration";
 import { isHebrewText } from "../lib/text";
-import type { ProgressOut, WordProgress } from "../types";
+import type { ActivityDay, ProgressOut, WordProgress } from "../types";
 
 function StatTile({
   label,
@@ -90,9 +92,18 @@ function HardestWordsCard({ words }: { words: WordProgress[] }) {
   );
 }
 
-export function ProgressPage({ onOpenWords }: { onOpenWords: () => void }) {
+export function ProgressPage({
+  profileSlug,
+  onOpenWords,
+  onOpenWeeklySummary,
+}: {
+  profileSlug: string;
+  onOpenWords: () => void;
+  onOpenWeeklySummary: () => void;
+}) {
   const [progress, setProgress] = useState<ProgressOut | null>(null);
   const [words, setWords] = useState<WordProgress[] | null>(null);
+  const [activity, setActivity] = useState<ActivityDay[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,6 +112,7 @@ export function ProgressPage({ onOpenWords }: { onOpenWords: () => void }) {
       .then(setProgress)
       .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "Couldn't load progress."));
     api.getWords().then(setWords).catch(() => undefined); // hardest-words card just stays empty on failure
+    api.getActivity().then(setActivity).catch(() => undefined); // calendar just stays empty on failure
   }, []);
 
   return (
@@ -112,6 +124,8 @@ export function ProgressPage({ onOpenWords }: { onOpenWords: () => void }) {
 
         {progress && (
           <>
+            <MilestoneCelebration fluentCount={progress.words_fluent} profileSlug={profileSlug} />
+
             <FluencyProgressBar fluent={progress.words_fluent} total={progress.total_verified_words} />
 
             <div className="grid grid-cols-2 gap-3">
@@ -126,6 +140,16 @@ export function ProgressPage({ onOpenWords }: { onOpenWords: () => void }) {
               <DailyGoalTile today={progress.today_review_count} goal={progress.daily_goal} />
             </div>
 
+            <button
+              type="button"
+              onClick={onOpenWeeklySummary}
+              className="rounded-2xl bg-surface px-5 py-4 text-left transition-colors hover:bg-surfacemuted"
+            >
+              <span className="text-sm font-semibold text-bridge">This week →</span>
+              <span className="block text-sm text-parchment/60">See your weekly summary</span>
+            </button>
+
+            {activity && <ActivityCalendar days={activity} />}
             {words && <HardestWordsCard words={words} />}
           </>
         )}

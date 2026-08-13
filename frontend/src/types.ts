@@ -113,6 +113,23 @@ export interface WordProgress {
   fluent_at: string | null;
 }
 
+export interface ActivityDay {
+  activity_date: string; // YYYY-MM-DD
+  review_count: number;
+  correct_count: number;
+}
+
+export interface WeeklySummary {
+  words_added: number;
+  words_became_fluent: number;
+  days_studied: number;
+  reviews_this_week: number;
+  accuracy_this_week: number;
+  accuracy_last_week: number;
+}
+
+export type Direction = "hebrew_learner" | "spanish_learner";
+
 export interface LoginResponse {
   access_token: string;
   token_type: string;
