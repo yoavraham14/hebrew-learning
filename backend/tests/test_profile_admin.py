@@ -10,7 +10,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.config import get_settings
-from app.models import DailyActivity, Profile, RecentMiss, UserWordProgress, WordPair
+from app.models import DailyActivity, Profile, RecentMiss, UserWordProgress, Video, WatchedVideo, WordPair
 from app.security import hash_pin, verify_pin
 from app.services.profiles import _slugify, create_profile, reset_profile
 
@@ -151,6 +151,13 @@ def test_create_profile_rejects_invalid_direction(client, db_session):
 _reset_test_word_counter = 0
 
 
+def _video(db_session, n: int) -> Video:
+    v = Video(title=f"Video {n}", youtube_video_id=f"vid{n:06d}", level="A1", topic="test", ordering=n)
+    db_session.add(v)
+    db_session.commit()
+    return v
+
+
 def _seed_progress_for_reset_test(db_session, profile: Profile):
     """A throwaway profile with real progress data attached, so the reset
     test can verify it's actually gone afterward — not just that the
@@ -159,6 +166,7 @@ def _seed_progress_for_reset_test(db_session, profile: Profile):
     global _reset_test_word_counter
     _reset_test_word_counter += 1
     word = _word(db_session, _reset_test_word_counter)
+    video = _video(db_session, _reset_test_word_counter)
     now = datetime.now(timezone.utc)
     db_session.add(
         UserWordProgress(
@@ -167,6 +175,7 @@ def _seed_progress_for_reset_test(db_session, profile: Profile):
     )
     db_session.add(RecentMiss(profile_id=profile.id, word_pair_id=word.id, missed_at=now))
     db_session.add(DailyActivity(profile_id=profile.id, activity_date=now.date(), review_count=5, correct_count=4))
+    db_session.add(WatchedVideo(profile_id=profile.id, video_id=video.id, watched_at=now))
     profile.total_reviews = 5
     profile.current_streak = 3
     profile.longest_streak = 3
@@ -184,6 +193,7 @@ def test_reset_profile_wipes_all_progress_data(db_session):
     assert db_session.query(UserWordProgress).filter_by(profile_id=profile.id).count() == 0
     assert db_session.query(RecentMiss).filter_by(profile_id=profile.id).count() == 0
     assert db_session.query(DailyActivity).filter_by(profile_id=profile.id).count() == 0
+    assert db_session.query(WatchedVideo).filter_by(profile_id=profile.id).count() == 0
     db_session.refresh(profile)
     assert profile.total_reviews == 0
     assert profile.current_streak == 0
@@ -192,7 +202,7 @@ def test_reset_profile_wipes_all_progress_data(db_session):
 
 
 def test_reset_profile_preserves_the_profile_row_and_settings(db_session):
-    profile = _profile(db_session, fluency_threshold=7, daily_goal=42)
+    profile = _profile(db_session, fluency_threshold=7, daily_goal=42, weekly_video_goal=5)
     _seed_progress_for_reset_test(db_session, profile)
     original_pin_hash = profile.pin_hash
     settings = get_settings()
@@ -204,6 +214,7 @@ def test_reset_profile_preserves_the_profile_row_and_settings(db_session):
     assert profile.pin_hash == original_pin_hash  # PIN untouched
     assert profile.fluency_threshold == 7  # settings survive, per the clarified decision
     assert profile.daily_goal == 42
+    assert profile.weekly_video_goal == 5
 
 
 def test_reset_profile_rejects_wrong_password(db_session):
@@ -263,6 +274,8 @@ def test_reset_profile_does_not_touch_other_profiles_data(db_session):
 
     assert db_session.query(UserWordProgress).filter_by(profile_id=target.id).count() == 0
     assert db_session.query(UserWordProgress).filter_by(profile_id=other.id).count() == 1  # untouched
+    assert db_session.query(WatchedVideo).filter_by(profile_id=target.id).count() == 0
+    assert db_session.query(WatchedVideo).filter_by(profile_id=other.id).count() == 1  # untouched
 
 
 # ---------------------------------------------------------------------------

@@ -60,6 +60,12 @@ class Profile(Base):
     daily_goal: Mapped[int] = mapped_column(Integer, default=10)
     longest_streak: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Video-library feature pass. Target watched-video count per rolling
+    # 7-day window (same window app.services.progress.get_weekly_summary
+    # already uses) — shown as a progress card on the Progress tab, same
+    # shape as daily_goal. User-editable via PATCH /api/profiles/me.
+    weekly_video_goal: Mapped[int] = mapped_column(Integer, default=1)
+
 
 class WordPair(Base):
     """One Hebrew<->Spanish<->English word concept, shared by both profiles
@@ -89,6 +95,23 @@ class WordPair(Base):
 
     example_sentence_he: Mapped[str] = mapped_column(Text)
     example_sentence_es: Mapped[str] = mapped_column(Text)
+    # Spanish-phonetic transliteration of the FULL example_sentence_he
+    # (not just the word) — see schemas.GeneratedWordItem docstring-adjacent
+    # comment. NULL for rows the sentence-backfill pass
+    # (app.services.word_generator.run_sentence_backfill_batch) hasn't
+    # reached yet.
+    example_sentence_phonetic_es: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Which version of gemini_client.CURRENT_SENTENCE_RULES_VERSION this
+    # row's example_sentence_*/example_sentence_phonetic_es were written
+    # under. THIS, not example_sentence_phonetic_es's NULL-ness, is the
+    # backfill work-queue marker (`sentence_rules_version < CURRENT_...`):
+    # a row can have a populated phonetic sentence from an OLDER, weaker
+    # version of the specificity rules and still need reprocessing once
+    # those rules tighten — NULL-ness alone stopped being a reliable
+    # "needs backfill" signal the moment that became possible. Stamped at
+    # insert time (word_generator._insert_words_with_verification) and
+    # again on every successful backfill regeneration.
+    sentence_rules_version: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -207,6 +230,55 @@ class DailyActivity(Base):
     correct_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class Video(Base):
+    """One catalog entry in the standalone video library — a curated
+    Hebrew-learning YouTube video, shared by both profiles the same way
+    WordPair is (not per-profile content). Seeded once via
+    app.scripts.seed_videos, not by the Gemini pipeline — these are
+    hand-verified against YouTube's oEmbed endpoint before import (see the
+    video-library plan), not LLM-generated content.
+    """
+
+    __tablename__ = "videos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(256))
+    youtube_video_id: Mapped[str] = mapped_column(String(32), unique=True)
+    # Free text, verbatim from the source list — NOT the CefrLevel literal
+    # used elsewhere (word generation only ever produces A1-B2; this field
+    # also covers "A0" and combo labels like "A1/A2").
+    level: Mapped[str] = mapped_column(String(16))
+    # Verbatim comma-joined topic tags from the source list, e.g.
+    # "alphabet, reading, writing" — display-only, not parsed/filtered on.
+    topic: Mapped[str] = mapped_column(String(128))
+    # The source list's own # column — sort key. Gaps are fine (two
+    # candidates were dropped after verification; ordering is not a dense
+    # sequence and isn't relied on as one).
+    ordering: Mapped[int] = mapped_column(Integer, index=True)
+
+
+class WatchedVideo(Base):
+    """One (profile, video) pair the profile has watched to completion
+    (YouTube IFrame API's ENDED state — see the video-library plan).
+    Unique per (profile_id, video_id): a video is marked watched once, the
+    first time it's finished; re-watching doesn't re-count toward a later
+    week's goal (app.services.progress.get_progress's
+    videos_watched_this_week) — this is deliberately about consuming new
+    content, same "first-time achievement" spirit as words_seen/fluency
+    elsewhere in this app, not a repeatable watch-session log.
+    """
+
+    __tablename__ = "watched_videos"
+    __table_args__ = (UniqueConstraint("profile_id", "video_id", name="uq_profile_video"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
+    watched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+    video: Mapped["Video"] = relationship(lazy="joined")
+
+
 class GenerationCallLog(Base):
     """One row per Gemini generation call — the audit trail behind the daily
     cap in SPEC.md §2.1.
@@ -227,6 +299,13 @@ class GenerationCallLog(Base):
     api_calls_made: Mapped[int] = mapped_column(Integer, default=1)
     verify_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # "success"|"error"|"skipped_cap"
     words_verified_ok: Mapped[int] = mapped_column(Integer, default=0)
+
+    # "generate" (new-word generation, the original/default) |
+    # "sentence_backfill" (app.services.word_generator.
+    # run_sentence_backfill_batch) — both share the same daily cap counted
+    # by _count_calls_today; this just keeps the audit trail legible about
+    # which pipeline made each call.
+    call_kind: Mapped[str] = mapped_column(String(24), default="generate")
 
 
 class GenerationStatus(Base):

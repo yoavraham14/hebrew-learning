@@ -29,6 +29,11 @@ class GeneratedWordItem(BaseModel):
     topic: str = Field(min_length=1, max_length=64)
     example_sentence_he: str = Field(min_length=1, max_length=500)
     example_sentence_es: str = Field(min_length=1, max_length=500)
+    # Spanish-phonetic transliteration of the FULL example_sentence_he (not
+    # just the target word) — same purpose as phonetic_es but sentence-
+    # scoped, for the fill_blank exercise's phonetic line. See
+    # gemini_client._PHONETIC_RULES for the transliteration conventions.
+    example_sentence_phonetic_es: str = Field(min_length=1, max_length=1000)
 
     @field_validator(
         "hebrew_word",
@@ -40,6 +45,7 @@ class GeneratedWordItem(BaseModel):
         "topic",
         "example_sentence_he",
         "example_sentence_es",
+        "example_sentence_phonetic_es",
     )
     @classmethod
     def _strip(cls, v: str) -> str:
@@ -98,6 +104,71 @@ class VerificationBatch(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Sentence backfill pipeline — regenerates just example_sentence_he/_es/
+# _phonetic_es for existing WordPair rows predating the specificity/
+# transliteration fix (see app.services.word_generator.
+# run_sentence_backfill_batch). Correlates by word_pair_id, not array
+# index, since a backfill batch spans arbitrary existing words rather than
+# one topic/level-homogeneous freshly-generated batch.
+# ---------------------------------------------------------------------------
+
+
+class SentenceBackfillItem(BaseModel):
+    word_pair_id: int
+    hebrew_word: str
+    spanish_word: str
+    english_word: str
+    part_of_speech: str
+    topic: str
+    cefr_level: CefrLevel
+
+
+class SentenceBackfillResult(BaseModel):
+    word_pair_id: int
+    example_sentence_he: str = Field(min_length=1, max_length=500)
+    example_sentence_es: str = Field(min_length=1, max_length=500)
+    example_sentence_phonetic_es: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("example_sentence_he", "example_sentence_es", "example_sentence_phonetic_es")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+    @field_validator("example_sentence_he")
+    @classmethod
+    def _must_contain_hebrew_script(cls, v: str) -> str:
+        if not _HEBREW_RANGE.search(v):
+            raise ValueError("example_sentence_he must contain Hebrew script characters")
+        return v
+
+
+class SentenceBackfillBatch(BaseModel):
+    results: list[SentenceBackfillResult]
+
+
+class SentenceBackfillVerificationItem(BaseModel):
+    word_pair_id: int
+    status: VerificationStatus
+    corrected: SentenceBackfillResult | None = None
+    note: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def _corrected_required_iff_status_corrected(self) -> "SentenceBackfillVerificationItem":
+        if self.status == "corrected" and self.corrected is None:
+            raise ValueError('corrected must be provided when status is "corrected"')
+        if self.status != "corrected" and self.corrected is not None:
+            self.corrected = None
+        return self
+
+
+class SentenceBackfillVerificationBatch(BaseModel):
+    results: list[SentenceBackfillVerificationItem]
+
+
+# ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
 
@@ -114,6 +185,7 @@ class ProfilePublicOut(BaseModel):
     target_lang: str
     fluency_threshold: int
     daily_goal: int
+    weekly_video_goal: int
 
     model_config = {"from_attributes": True}
 
@@ -130,6 +202,7 @@ class UpdateProfileSettingsRequest(BaseModel):
     # adding a new one per setting.
     fluency_threshold: int | None = Field(default=None, ge=1, le=50)
     daily_goal: int | None = Field(default=None, ge=1, le=200)
+    weekly_video_goal: int | None = Field(default=None, ge=1, le=50)
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +271,12 @@ class MultipleChoiceCardOut(BaseModel):
     # Only for fill_blank — the example sentence with the target word
     # blanked out. prompt_text is unused in that case.
     fill_blank_sentence: str | None = None
+    # Spanish-phonetic transliteration of fill_blank_sentence (also with the
+    # target word's span blanked), shown beneath it — only populated when
+    # the target language is Hebrew, the profile doesn't read Hebrew
+    # natively, and the word's sentence has been backfilled with a
+    # transliteration (see exercise_ladder.build_multiple_choice_card).
+    fill_blank_sentence_phonetic: str | None = None
 
     options: list[ExerciseOption]
 
@@ -213,7 +292,7 @@ class RoundOut(BaseModel):
     a different shape on GET /cards/next — see plan decision #7.
     """
 
-    kind: Literal["recovery", "mixed"]
+    kind: Literal["recovery", "mixed", "sentence"]
     cards: list[MultipleChoiceCardOut]
 
 
@@ -253,6 +332,12 @@ class ProgressOut(BaseModel):
     daily_goal: int
     today_review_count: int
 
+    # Video-library feature pass — see app.services.progress.get_progress
+    # and app.models.WatchedVideo.
+    videos_watched: int
+    videos_watched_this_week: int
+    weekly_video_goal: int
+
 
 # ---------------------------------------------------------------------------
 # Word table (progress-page feature pass, stage D) — every word this
@@ -282,6 +367,26 @@ class WordProgressOut(BaseModel):
 
 class SetStarredRequest(BaseModel):
     starred: bool
+
+
+# ---------------------------------------------------------------------------
+# Video library — standalone, not part of the study/exercise flow. See
+# app.services.videos / app.models.Video / app.models.WatchedVideo.
+# ---------------------------------------------------------------------------
+
+
+class VideoOut(BaseModel):
+    id: int
+    title: str
+    youtube_video_id: str
+    level: str
+    topic: str
+    ordering: int
+    # Computed per the requesting profile (app.services.videos.list_videos)
+    # so the frontend never needs a second round-trip to know watch state.
+    watched: bool
+
+    model_config = {"from_attributes": True}
 
 
 # ---------------------------------------------------------------------------

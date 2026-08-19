@@ -28,6 +28,7 @@ def _item(n: int, **overrides) -> GeneratedWordItem:
         "topic": "home",
         "example_sentence_he": f"זו מילה{n}.",
         "example_sentence_es": f"Esta es palabra{n}.",
+        "example_sentence_phonetic_es": f"Zo milá{n}.",
     }
     data.update(overrides)
     return GeneratedWordItem.model_validate(data)
@@ -195,6 +196,7 @@ def test_dedup_holds_when_a_correction_collides_with_an_existing_row(db_session,
         topic="home",
         example_sentence_he="זה קיים.",
         example_sentence_es="Esto es existente.",
+        example_sentence_phonetic_es="Ze kaiám.",
     )
     monkeypatch.setattr(word_generator, "generate_word_batch", lambda **kw: GeneratedWordBatch(words=items))
     monkeypatch.setattr(

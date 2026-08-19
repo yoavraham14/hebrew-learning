@@ -42,15 +42,15 @@ function StatTile({
   return <div className="flex flex-col items-center gap-1 rounded-2xl bg-surface px-4 py-6 text-center">{content}</div>;
 }
 
-function DailyGoalTile({ today, goal }: { today: number; goal: number }) {
-  const pct = goal > 0 ? Math.min(100, Math.round((today / goal) * 100)) : 0;
-  const met = today >= goal;
+function GoalTile({ label, current, goal }: { label: string; current: number; goal: number }) {
+  const pct = goal > 0 ? Math.min(100, Math.round((current / goal) * 100)) : 0;
+  const met = current >= goal;
   return (
     <div className="flex flex-col items-center gap-2 rounded-2xl bg-surface px-4 py-6 text-center">
       <span className={`text-4xl font-bold tabular-nums ${met ? "text-known" : "text-ember"}`}>
-        {today}/{goal}
+        {current}/{goal}
       </span>
-      <span className="text-sm text-parchment/60">Daily goal</span>
+      <span className="text-sm text-parchment/60">{label}</span>
       <div className="mt-1 h-1.5 w-full max-w-20 overflow-hidden rounded-full bg-surfacemuted">
         <div
           className={`h-full rounded-full transition-[width] duration-700 ease-out ${met ? "bg-known" : "bg-ember"}`}
@@ -137,7 +137,13 @@ export function ProgressPage({
                 accent="text-ember"
                 sublabel={`Best: ${progress.longest_streak}`}
               />
-              <DailyGoalTile today={progress.today_review_count} goal={progress.daily_goal} />
+              <GoalTile label="Daily goal" current={progress.today_review_count} goal={progress.daily_goal} />
+              <StatTile label="Videos watched" value={progress.videos_watched} accent="text-bridge" />
+              <GoalTile
+                label="Weekly video goal"
+                current={progress.videos_watched_this_week}
+                goal={progress.weekly_video_goal}
+              />
             </div>
 
             <button

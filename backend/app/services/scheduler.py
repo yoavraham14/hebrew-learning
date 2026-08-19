@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.logging_config import get_logger
 from app.models import Profile, UserWordProgress, WordPair
-from app.services.word_generator import run_generation_batch
+from app.services.word_generator import run_generation_batch, run_sentence_backfill_batch
 
 logger = get_logger(__name__)
 
@@ -62,6 +62,14 @@ def check_and_topup() -> None:
                 extra={"extra_fields": {"profiles_below_threshold": low}},
             )
             run_generation_batch(db)
+
+        # Opportunistic maintenance, independent of the unseen-word
+        # threshold above — spreads the sentence-quality/transliteration
+        # backfill across many small calls over natural top-up cycles
+        # rather than a one-off burst script. Runs after the top-up check
+        # so a genuine unseen-word shortage always gets first claim on the
+        # shared daily cap; this just no-ops if the cap's already spent.
+        run_sentence_backfill_batch(db)
     finally:
         db.close()
 

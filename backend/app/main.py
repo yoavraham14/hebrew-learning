@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.logging_config import configure_logging, get_logger
-from app.routers import audio, auth, cards, health, internal, profiles, progress
+from app.routers import audio, auth, cards, health, internal, profiles, progress, videos
 from app.services.scheduler import bootstrap_if_empty, start_scheduler
 
 settings = get_settings()
@@ -55,6 +55,7 @@ app.include_router(cards.router)
 app.include_router(progress.router)
 app.include_router(audio.router)
 app.include_router(internal.router)
+app.include_router(videos.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")

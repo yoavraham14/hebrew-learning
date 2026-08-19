@@ -5,7 +5,7 @@ daily-goal-vs-today) and the daily_activity upsert that backs it.
 
 from datetime import date, datetime, timedelta, timezone
 
-from app.models import DailyActivity, Profile, UserWordProgress, WordPair
+from app.models import DailyActivity, Profile, UserWordProgress, Video, WatchedVideo, WordPair
 from app.security import hash_pin
 from app.services.cards import answer_word, rate_word
 from app.services.progress import get_progress
@@ -125,3 +125,59 @@ def test_get_progress_surfaces_daily_goal(db_session):
     profile = _profile(db_session, daily_goal=25)
     progress = get_progress(db_session, profile)
     assert progress.daily_goal == 25
+
+
+# ---------------------------------------------------------------------------
+# Video-library stats (videos_watched / videos_watched_this_week /
+# weekly_video_goal) — see app.models.WatchedVideo / app.services.videos.
+# ---------------------------------------------------------------------------
+
+
+def _video(db_session, n: int) -> Video:
+    v = Video(title=f"Video {n}", youtube_video_id=f"vid{n:06d}", level="A1", topic="test", ordering=n)
+    db_session.add(v)
+    db_session.commit()
+    return v
+
+
+def test_get_progress_surfaces_weekly_video_goal(db_session):
+    profile = _profile(db_session, weekly_video_goal=3)
+    progress = get_progress(db_session, profile)
+    assert progress.weekly_video_goal == 3
+
+
+def test_get_progress_counts_watched_videos(db_session):
+    profile = _profile(db_session)
+    video1 = _video(db_session, 1)
+    video2 = _video(db_session, 2)
+    now = datetime.now(timezone.utc)
+    db_session.add(WatchedVideo(profile_id=profile.id, video_id=video1.id, watched_at=now))
+    db_session.add(WatchedVideo(profile_id=profile.id, video_id=video2.id, watched_at=now))
+    db_session.commit()
+
+    progress = get_progress(db_session, profile)
+    assert progress.videos_watched == 2
+    assert progress.videos_watched_this_week == 2
+
+
+def test_get_progress_videos_watched_this_week_excludes_older_watches(db_session):
+    profile = _profile(db_session)
+    video1 = _video(db_session, 1)
+    video2 = _video(db_session, 2)
+    now = datetime.now(timezone.utc)
+    db_session.add(WatchedVideo(profile_id=profile.id, video_id=video1.id, watched_at=now))
+    db_session.add(
+        WatchedVideo(profile_id=profile.id, video_id=video2.id, watched_at=now - timedelta(days=10))
+    )
+    db_session.commit()
+
+    progress = get_progress(db_session, profile)
+    assert progress.videos_watched == 2  # lifetime total includes both
+    assert progress.videos_watched_this_week == 1  # only the recent one
+
+
+def test_get_progress_video_stats_zero_when_none_watched(db_session):
+    profile = _profile(db_session)
+    progress = get_progress(db_session, profile)
+    assert progress.videos_watched == 0
+    assert progress.videos_watched_this_week == 0

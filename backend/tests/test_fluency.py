@@ -56,6 +56,24 @@ def test_update_fluency_threshold(client, db_session):
     assert resp.json()["fluency_threshold"] == 5
 
 
+def test_update_weekly_video_goal(client, db_session):
+    _profile(db_session)
+    headers = _login(client, "hebrew_learner", "1234")
+
+    resp = client.patch("/api/profiles/me", json={"weekly_video_goal": 3}, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["weekly_video_goal"] == 3
+
+
+def test_omitting_weekly_video_goal_leaves_it_unchanged(client, db_session):
+    _profile(db_session, weekly_video_goal=4)
+    headers = _login(client, "hebrew_learner", "1234")
+
+    resp = client.patch("/api/profiles/me", json={}, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["weekly_video_goal"] == 4
+
+
 def test_update_fluency_threshold_requires_auth(client, db_session):
     _profile(db_session)
     resp = client.patch("/api/profiles/me", json={"fluency_threshold": 5})

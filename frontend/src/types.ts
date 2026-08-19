@@ -11,6 +11,7 @@ export interface ProfilePublic {
   target_lang: Lang;
   fluency_threshold: number;
   daily_goal: number;
+  weekly_video_goal: number;
 }
 
 // Level 0 — the original passive reveal-and-self-rate card.
@@ -59,6 +60,7 @@ export interface MultipleChoiceCardOut {
   audio_lang: Lang | null;
 
   fill_blank_sentence: string | null;
+  fill_blank_sentence_phonetic: string | null;
 
   options: ExerciseOption[];
 }
@@ -66,7 +68,7 @@ export interface MultipleChoiceCardOut {
 export type CardResponse = RevealCardOut | MultipleChoiceCardOut;
 
 export interface RoundOut {
-  kind: "recovery" | "mixed";
+  kind: "recovery" | "mixed" | "sentence";
   cards: MultipleChoiceCardOut[];
 }
 
@@ -95,6 +97,9 @@ export interface ProgressOut {
   due_today: number;
   daily_goal: number;
   today_review_count: number;
+  videos_watched: number;
+  videos_watched_this_week: number;
+  weekly_video_goal: number;
 }
 
 export interface WordProgress {
@@ -126,6 +131,16 @@ export interface WeeklySummary {
   reviews_this_week: number;
   accuracy_this_week: number;
   accuracy_last_week: number;
+}
+
+export interface Video {
+  id: number;
+  title: string;
+  youtube_video_id: string;
+  level: string;
+  topic: string;
+  ordering: number;
+  watched: boolean;
 }
 
 export type Direction = "hebrew_learner" | "spanish_learner";

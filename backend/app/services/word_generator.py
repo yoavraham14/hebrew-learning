@@ -15,11 +15,14 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.logging_config import get_logger
 from app.models import GenerationCallLog, GenerationStatus, WordPair
-from app.schemas import GeneratedWordItem, VerificationItem
+from app.schemas import GeneratedWordItem, SentenceBackfillItem, VerificationItem
 from app.services.gemini_client import (
+    CURRENT_SENTENCE_RULES_VERSION,
     GeminiBillingError,
     GeminiGenerationError,
     generate_word_batch,
+    regenerate_sentence_batch,
+    verify_sentence_backfill_batch,
     verify_word_batch,
 )
 
@@ -45,6 +48,8 @@ TOPICS: list[str] = [
 CEFR_LEVELS: list[str] = ["A1", "A2", "B1", "B2"]
 
 _EXCLUSION_LIST_LIMIT = 300
+
+SENTENCE_BACKFILL_BATCH_SIZE = 10
 
 
 def _utcnow() -> datetime:
@@ -148,7 +153,20 @@ def _insert_words_with_verification(
         if exists is not None:
             continue
 
-        db.add(WordPair(**final_item.model_dump(), verified=verified, verification_note=note))
+        # sentence_rules_version is stamped as CURRENT regardless of
+        # `verified` — that flag is about translation-naturalness, an
+        # orthogonal axis to the specificity-rules version. Whatever
+        # sentence Gemini produced this call was written under the
+        # CURRENT prompt either way, so it's already current, not
+        # something the sentence-backfill pass needs to revisit.
+        db.add(
+            WordPair(
+                **final_item.model_dump(),
+                verified=verified,
+                verification_note=note,
+                sentence_rules_version=CURRENT_SENTENCE_RULES_VERSION,
+            )
+        )
         db.flush()
         inserted += 1
 
@@ -300,3 +318,183 @@ def run_generation_batch(db: Session, *, batch_size: int | None = None) -> int:
         },
     )
     return inserted
+
+
+def run_sentence_backfill_batch(db: Session, *, batch_size: int | None = None) -> int:
+    """Regenerates example_sentence_he/_es/_phonetic_es for existing
+    WordPair rows whose sentence was written under an older version of the
+    specificity rules (SPEC.md-adjacent — see the review-games/sentence-
+    round plan). Selected by `sentence_rules_version <
+    CURRENT_SENTENCE_RULES_VERSION` — NOT by `example_sentence_phonetic_es
+    IS NULL`: a row can already have a populated phonetic sentence from an
+    OLDER, weaker version of the rules and still need reprocessing once
+    those rules tighten (this is exactly what happened going from v0 to
+    v1 — see gemini_client.CURRENT_SENTENCE_RULES_VERSION's docstring). No
+    separate progress table; the version column itself is the work queue,
+    and a version bump is what makes every row eligible again.
+
+    Mirrors run_generation_batch's two-stage (generate, then verify) shape
+    and cap/halt gating, but with a stricter apply rule: a regenerated
+    sentence is only ever written to the row once verification actually
+    confirms it ("ok" or "corrected"). If stage 2 is skipped (would exceed
+    the daily cap), errors, or rejects an entry, that row is left
+    untouched at NULL and retried on a future top-up cycle — unlike
+    run_generation_batch, which inserts unverified new words anyway
+    (the bank still needs them), here the OLD sentence already exists and
+    works fine as a fallback, so there's never a reason to apply an
+    unconfirmed rewrite. This is deliberately spread across many small
+    calls via the periodic top-up scheduler (see
+    app.services.scheduler.check_and_topup) rather than one burst script.
+
+    Always fails safe: on cap/halt/error, returns 0 and never raises, same
+    posture as run_generation_batch.
+    """
+    settings = get_settings()
+    status = get_or_create_status(db)
+
+    if status.halted:
+        logger.warning(
+            "generation halted; skipping sentence-backfill batch",
+            extra={"extra_fields": {"halted_reason": status.halted_reason}},
+        )
+        return 0
+
+    daily_count = _count_calls_today(db)
+    if daily_count >= settings.gemini_daily_call_cap:
+        logger.info(
+            "daily gemini call cap reached; skipping sentence-backfill batch",
+            extra={"extra_fields": {"daily_count": daily_count, "cap": settings.gemini_daily_call_cap}},
+        )
+        return 0
+
+    size = batch_size or SENTENCE_BACKFILL_BATCH_SIZE
+    rows = db.scalars(
+        select(WordPair)
+        .where(WordPair.sentence_rules_version < CURRENT_SENTENCE_RULES_VERSION)
+        .order_by(WordPair.id.asc())
+        .limit(size)
+    ).all()
+    if not rows:
+        return 0
+
+    items = [
+        SentenceBackfillItem(
+            word_pair_id=w.id,
+            hebrew_word=w.hebrew_word,
+            spanish_word=w.spanish_word,
+            english_word=w.english_word,
+            part_of_speech=w.part_of_speech,
+            topic=w.topic,
+            cefr_level=w.cefr_level,
+        )
+        for w in rows
+    ]
+
+    # --- Stage 1: regenerate ---
+    try:
+        batch = regenerate_sentence_batch(items)
+    except GeminiBillingError as exc:
+        _halt(status, exc)
+        db.add(
+            GenerationCallLog(
+                called_at=_utcnow(),
+                batch_size_requested=size,
+                words_inserted=0,
+                status="error",
+                error_message=f"BILLING (halted generation): {exc}"[:2000],
+                api_calls_made=1,
+                verify_status=None,
+                call_kind="sentence_backfill",
+            )
+        )
+        db.commit()
+        return 0
+    except GeminiGenerationError as exc:
+        db.add(
+            GenerationCallLog(
+                called_at=_utcnow(),
+                batch_size_requested=size,
+                words_inserted=0,
+                status="error",
+                error_message=str(exc)[:2000],
+                api_calls_made=1,
+                verify_status=None,
+                call_kind="sentence_backfill",
+            )
+        )
+        db.commit()
+        logger.warning(
+            "gemini sentence-backfill call failed (will retry next cycle)",
+            extra={"extra_fields": {"error": str(exc)}},
+        )
+        return 0
+
+    # --- Stage 2: verify (re-check the cap first, same as run_generation_batch) ---
+    api_calls_made = 1
+    verify_status = "skipped_cap"
+    verification_results: dict[int, object] | None = None
+
+    if daily_count + api_calls_made < settings.gemini_daily_call_cap:
+        try:
+            verification = verify_sentence_backfill_batch(items=items, results=batch.results)
+            api_calls_made = 2
+            verify_status = "success"
+            verification_results = {r.word_pair_id: r for r in verification.results}
+        except GeminiBillingError as exc:
+            api_calls_made = 2
+            verify_status = "error"
+            _halt(status, exc)
+        except GeminiGenerationError as exc:
+            api_calls_made = 2
+            verify_status = "error"
+            logger.warning(
+                "gemini sentence-backfill verification call failed — no rows applied this run",
+                extra={"extra_fields": {"error": str(exc)}},
+            )
+    else:
+        logger.info("skipping sentence-backfill verification call this run — would exceed daily cap")
+
+    # Only apply rows verification actually confirmed — see docstring for why
+    # this is stricter than run_generation_batch's insert-anyway policy.
+    updated = 0
+    if verification_results is not None:
+        results_by_id = {r.word_pair_id: r for r in batch.results}
+        for w in rows:
+            v = verification_results.get(w.id)
+            if v is None or v.status == "reject":
+                continue
+            final = v.corrected if v.status == "corrected" else results_by_id.get(w.id)
+            if final is None:
+                continue
+            w.example_sentence_he = final.example_sentence_he
+            w.example_sentence_es = final.example_sentence_es
+            w.example_sentence_phonetic_es = final.example_sentence_phonetic_es
+            w.sentence_rules_version = CURRENT_SENTENCE_RULES_VERSION
+            updated += 1
+
+    status.last_success_at = _utcnow()
+    db.add(
+        GenerationCallLog(
+            called_at=_utcnow(),
+            batch_size_requested=size,
+            words_inserted=updated,
+            status="success",
+            api_calls_made=api_calls_made,
+            verify_status=verify_status,
+            words_verified_ok=updated,
+            call_kind="sentence_backfill",
+        )
+    )
+    db.commit()
+    logger.info(
+        "ran sentence-backfill batch",
+        extra={
+            "extra_fields": {
+                "requested": size,
+                "updated": updated,
+                "api_calls_made": api_calls_made,
+                "verify_status": verify_status,
+            }
+        },
+    )
+    return updated

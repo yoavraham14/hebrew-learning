@@ -19,6 +19,7 @@ VALID_ITEM = {
     "topic": "home",
     "example_sentence_he": "אני פותח את החלון.",
     "example_sentence_es": "Abro la ventana.",
+    "example_sentence_phonetic_es": "Aní potéaj et ajalón.",
 }
 
 

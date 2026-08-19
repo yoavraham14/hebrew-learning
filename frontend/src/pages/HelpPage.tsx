@@ -23,7 +23,7 @@ const SECTIONS: HelpSection[] = [
       },
       {
         heading: "Rondas de repaso",
-        text: 'Cada 15 repasos aparece una "ronda de recuperación" con las palabras que fallaste recientemente. Cada 30 repasos aparece una "ronda mixta" más amplia, que también puede incluir palabras ya fluidas.',
+        text: 'Cada 10 repasos aparece una "ronda de oraciones" con ejercicios para completar espacios usando palabras que ya has estudiado. Cada 15 repasos aparece una "ronda de recuperación" con las palabras que fallaste recientemente. Cada 30 repasos aparece una "ronda mixta" más amplia, que también puede incluir palabras ya fluidas.',
       },
       {
         heading: "Qué significa cada estadística",
@@ -32,6 +32,10 @@ const SECTIONS: HelpSection[] = [
       {
         heading: "Marcar con estrella",
         text: "Puedes marcar cualquier palabra con una estrella, desde la tarjeta de estudio o desde la tabla de palabras. Las palabras marcadas aparecen con más frecuencia en el repaso.",
+      },
+      {
+        heading: "Biblioteca de vídeos",
+        text: 'La pestaña "Videos" es independiente del estudio normal — una colección de vídeos de YouTube para aprender hebreo, filtrable por nivel, que puedes ver a tu propio ritmo y en cualquier orden. Un vídeo se marca como visto automáticamente al terminar de verlo, sin necesidad de confirmarlo tú. La página de progreso muestra cuántos vídeos has visto y una meta semanal (ajustable en Ajustes), igual que la meta diaria de repasos.',
       },
       {
         heading: "Restablecer el progreso",
@@ -51,7 +55,7 @@ const SECTIONS: HelpSection[] = [
       },
       {
         heading: "Review rounds",
-        text: 'Every 15 reviews, a "recovery round" appears with words you missed recently. Every 30 reviews, a broader "mixed round" appears, which can also include already-fluent words.',
+        text: 'Every 10 reviews, a "sentence round" appears with fill-in-the-blank practice for words you\'ve studied before. Every 15 reviews, a "recovery round" appears with words you missed recently. Every 30 reviews, a broader "mixed round" appears, which can also include already-fluent words.',
       },
       {
         heading: "What each stat means",
@@ -60,6 +64,10 @@ const SECTIONS: HelpSection[] = [
       {
         heading: "Starring",
         text: "You can star any word, from the study card or the word table. Starred words resurface more often in review.",
+      },
+      {
+        heading: "Video library",
+        text: 'The "Videos" tab is separate from regular study — a collection of Hebrew-learning YouTube videos, filterable by level, that you can watch at your own pace in any order. A video is automatically marked watched once you finish it, no need to confirm it yourself. The Progress page shows how many videos you\'ve watched and a weekly goal (adjustable in Settings), the same way the daily review goal works.',
       },
       {
         heading: "Resetting progress",
@@ -79,7 +87,7 @@ const SECTIONS: HelpSection[] = [
       },
       {
         heading: "סבבי חזרה",
-        text: 'כל 15 חזרות מופיע "סבב התאוששות" עם מילים שטעית בהן לאחרונה. כל 30 חזרות מופיע "סבב מעורב" רחב יותר, שיכול לכלול גם מילים שכבר שוטפות.',
+        text: 'כל 10 חזרות מופיע "סבב משפטים" עם תרגילי השלמת מילים חסרות במשפט, מתוך מילים שכבר למדת. כל 15 חזרות מופיע "סבב התאוששות" עם מילים שטעית בהן לאחרונה. כל 30 חזרות מופיע "סבב מעורב" רחב יותר, שיכול לכלול גם מילים שכבר שוטפות.',
       },
       {
         heading: "מה כל נתון אומר",
@@ -88,6 +96,10 @@ const SECTIONS: HelpSection[] = [
       {
         heading: "סימון בכוכב",
         text: "אפשר לסמן כל מילה בכוכב, מכרטיס הלימוד או מטבלת המילים. מילים מסומנות מופיעות בתדירות גבוהה יותר בחזרה.",
+      },
+      {
+        heading: "ספריית סרטונים",
+        text: 'הלשונית "Videos" נפרדת מהלימוד הרגיל — אוסף סרטוני יוטיוב ללימוד עברית, שאפשר לסנן לפי רמה ולצפות בהם בקצב שלך ובכל סדר. סרטון מסומן כנצפה אוטומטית עם סיום הצפייה, בלי צורך לאשר זאת בעצמך. עמוד ההתקדמות מציג כמה סרטונים צפית בהם ויעד שבועי (הניתן לשינוי בהגדרות), באותו אופן שבו פועל יעד החזרות היומי.',
       },
       {
         heading: "איפוס התקדמות",

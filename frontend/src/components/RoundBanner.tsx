@@ -9,6 +9,10 @@ const COPY: Record<RoundOut["kind"], { title: string; blurb: string }> = {
     title: "Mixed review",
     blurb: "A broader refresher across everything you've studied.",
   },
+  sentence: {
+    title: "Sentence practice",
+    blurb: "Fill in the blank using words you've already studied.",
+  },
 };
 
 // Shown once before a review-game round's cards start — a bonus-round

@@ -238,18 +238,26 @@ export function SettingsPage({
 }) {
   const [threshold, setThreshold] = useState(profile.fluency_threshold);
   const [dailyGoal, setDailyGoal] = useState(profile.daily_goal);
+  const [weeklyVideoGoal, setWeeklyVideoGoal] = useState(profile.weekly_video_goal);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const dirty = threshold !== profile.fluency_threshold || dailyGoal !== profile.daily_goal;
+  const dirty =
+    threshold !== profile.fluency_threshold ||
+    dailyGoal !== profile.daily_goal ||
+    weeklyVideoGoal !== profile.weekly_video_goal;
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
-      const updated = await api.updateSettings({ fluency_threshold: threshold, daily_goal: dailyGoal });
+      const updated = await api.updateSettings({
+        fluency_threshold: threshold,
+        daily_goal: dailyGoal,
+        weekly_video_goal: weeklyVideoGoal,
+      });
       onUpdate(updated);
       setSaved(true);
     } catch (err) {
@@ -298,6 +306,25 @@ export function SettingsPage({
               max={200}
               value={dailyGoal}
               onChange={(e) => setDailyGoal(Number(e.target.value))}
+              className="mt-3 w-24 rounded-xl border border-parchment/15 bg-surfacemuted px-4 py-2.5 text-lg font-semibold text-parchment focus:border-bridge/50 focus:outline-none"
+            />
+          </div>
+
+          <div className="mt-6 border-t border-parchment/10 pt-6">
+            <label htmlFor="weekly-video-goal" className="block text-sm font-medium text-parchment/70">
+              Weekly video goal
+            </label>
+            <p className="mt-1 text-sm text-parchment/50">
+              Target number of videos to watch per week, from the video library — shown as a progress card on the
+              Progress tab.
+            </p>
+            <input
+              id="weekly-video-goal"
+              type="number"
+              min={1}
+              max={50}
+              value={weeklyVideoGoal}
+              onChange={(e) => setWeeklyVideoGoal(Number(e.target.value))}
               className="mt-3 w-24 rounded-xl border border-parchment/15 bg-surfacemuted px-4 py-2.5 text-lg font-semibold text-parchment focus:border-bridge/50 focus:outline-none"
             />
           </div>

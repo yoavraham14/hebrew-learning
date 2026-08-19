@@ -7,6 +7,7 @@ import { ProfilePicker } from "./pages/ProfilePicker";
 import { ProgressPage } from "./pages/ProgressPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StudyPage } from "./pages/StudyPage";
+import { VideoLibraryPage } from "./pages/VideoLibraryPage";
 import { WeeklySummaryPage } from "./pages/WeeklySummaryPage";
 import { WordTablePage } from "./pages/WordTablePage";
 import type { ProfilePublic } from "./types";
@@ -14,7 +15,9 @@ import type { ProfilePublic } from "./types";
 // "words" and "weekly" are reached by drilling down from Progress, not
 // from the main nav — they behave like detail screens (their own Back
 // button) rather than peer tabs. "help" is reached from the header's "?".
-type View = "study" | "progress" | "settings" | "words" | "weekly";
+// "videos" IS a peer tab — the video library is a standalone destination,
+// not a Progress sub-page.
+type View = "study" | "progress" | "videos" | "settings" | "words" | "weekly";
 
 function AuthenticatedApp({
   profile,
@@ -68,7 +71,7 @@ function AuthenticatedApp({
       </header>
 
       <nav className="flex gap-2 px-4 pb-2 sm:px-6">
-        {(["study", "progress", "settings"] as const).map((v) => (
+        {(["study", "progress", "videos", "settings"] as const).map((v) => (
           <button
             key={v}
             type="button"
@@ -91,6 +94,7 @@ function AuthenticatedApp({
             onOpenWeeklySummary={() => setView("weekly")}
           />
         )}
+        {view === "videos" && <VideoLibraryPage />}
         {view === "settings" && (
           <SettingsPage profile={profile} onUpdate={onUpdateProfile} onSwitchProfile={onSwitchProfile} />
         )}

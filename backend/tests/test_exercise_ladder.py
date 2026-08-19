@@ -186,6 +186,47 @@ def test_fill_blank_sentence_blanks_out_the_target_word(db_session):
     assert words[0].hebrew_word not in card.fill_blank_sentence
 
 
+def test_fill_blank_sentence_phonetic_blanked_when_backfilled(db_session):
+    profile = _hebrew_learner(db_session)
+    words = _seed_words(db_session, 4)
+    words[0].example_sentence_phonetic_es = f"Zo {words[0].phonetic_es} tová."
+    db_session.commit()
+
+    card = exercise_ladder.build_multiple_choice_card(
+        db_session, profile, words[0], exercise_type="fill_blank", is_review=False
+    )
+
+    assert card.fill_blank_sentence_phonetic is not None
+    assert "____" in card.fill_blank_sentence_phonetic
+    assert words[0].phonetic_es not in card.fill_blank_sentence_phonetic
+
+
+def test_fill_blank_sentence_phonetic_none_when_not_backfilled(db_session):
+    profile = _hebrew_learner(db_session)
+    words = _seed_words(db_session, 4)  # example_sentence_phonetic_es left NULL
+
+    card = exercise_ladder.build_multiple_choice_card(
+        db_session, profile, words[0], exercise_type="fill_blank", is_review=False
+    )
+
+    assert card.fill_blank_sentence_phonetic is None
+
+
+def test_fill_blank_sentence_phonetic_none_for_spanish_learner(db_session):
+    # target_lang == "es" here — the phonetic transliteration is only ever
+    # meaningful for the Hebrew-reading-in-Spanish-phonetics direction.
+    profile = _spanish_learner(db_session)
+    words = _seed_words(db_session, 4)
+    words[0].example_sentence_phonetic_es = f"Zo {words[0].phonetic_es} tová."
+    db_session.commit()
+
+    card = exercise_ladder.build_multiple_choice_card(
+        db_session, profile, words[0], exercise_type="fill_blank", is_review=False
+    )
+
+    assert card.fill_blank_sentence_phonetic is None
+
+
 def test_build_card_level_zero_is_reveal(db_session):
     profile = _hebrew_learner(db_session)
     words = _seed_words(db_session, 1)

@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import DailyActivity, Profile, RecentMiss, UserWordProgress
+from app.models import DailyActivity, Profile, RecentMiss, UserWordProgress, WatchedVideo
 from app.schemas import Direction
 from app.security import hash_pin
 
@@ -60,10 +60,11 @@ def create_profile(db: Session, *, display_name: str, pin: str, direction: Direc
 
 def reset_profile(db: Session, *, target_slug: str, password: str, confirmation: str) -> Profile:
     """Genuine full wipe for one profile: every UserWordProgress,
-    RecentMiss, and DailyActivity row deleted, all counters zeroed. The
-    Profile row itself (slug, PIN, display name, direction, and settings
-    like fluency_threshold/daily_goal) is untouched — this can't lock
-    anyone out of their own account, it only erases what they've studied.
+    RecentMiss, DailyActivity, and WatchedVideo row deleted, all counters
+    zeroed. The Profile row itself (slug, PIN, display name, direction, and
+    settings like fluency_threshold/daily_goal/weekly_video_goal) is
+    untouched — this can't lock anyone out of their own account, it only
+    erases what they've studied.
 
     Two independent gates, both required: the shared RESET_PASSWORD (an
     operator-level secret, not the profile's own PIN — see config.py) and
@@ -90,6 +91,7 @@ def reset_profile(db: Session, *, target_slug: str, password: str, confirmation:
     db.query(UserWordProgress).filter(UserWordProgress.profile_id == profile.id).delete()
     db.query(RecentMiss).filter(RecentMiss.profile_id == profile.id).delete()
     db.query(DailyActivity).filter(DailyActivity.profile_id == profile.id).delete()
+    db.query(WatchedVideo).filter(WatchedVideo.profile_id == profile.id).delete()
 
     profile.total_reviews = 0
     profile.current_streak = 0

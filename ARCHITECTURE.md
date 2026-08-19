@@ -49,11 +49,11 @@ today, which has drifted ahead of SPEC.md in a few places (noted inline).
 lingua-app/
   SPEC.md              — product spec (what/why)
   ARCHITECTURE.md       — this file (how)
-  DEPLOY.md              — exact Cloud Run + Supabase deploy commands (see §10)
+  DEPLOY.md              — exact Cloud Run + Supabase deploy commands (see §11)
   README.md               — local dev setup, step by step
-  Dockerfile                — production image: build frontend, then FastAPI serves both (see §10)
+  Dockerfile                — production image: build frontend, then FastAPI serves both (see §11)
   .dockerignore               — keeps .env/.venv/node_modules out of the build context/image
-  docker-compose.yml            — Postgres ONLY, for local dev (see §8)
+  docker-compose.yml            — Postgres ONLY, for local dev (see §9)
 
   backend/
     app/
@@ -73,7 +73,8 @@ lingua-app/
         progress.py              GET /api/progress
         audio.py                  GET /api/audio/word-pairs/{id}
         health.py                  GET /health, GET /ready
-        internal.py                 POST /internal/tasks/{generate-topup,db-keepalive} — Cloud Scheduler only, see §10
+        internal.py                 POST /internal/tasks/{generate-topup,db-keepalive} — Cloud Scheduler only, see §11
+        videos.py                    GET /api/videos, POST /{id}/watch
 
       services/             — all real logic lives here, routers just call in
         word_generator.py       orchestrates the 2-stage Gemini generation pipeline + cost firewall
@@ -85,10 +86,12 @@ lingua-app/
         streak.py                    pure daily-streak logic
         progress.py                   words_seen/words_known/streak aggregation for GET /progress
         audio.py                       gTTS wrapper, niqqud stripping
-        scheduler.py                    APScheduler: bootstrap-if-empty + periodic top-up job
+        scheduler.py                    APScheduler: bootstrap-if-empty + periodic top-up job + sentence-backfill maintenance
+        videos.py                        video-library listing + mark-watched (§8) — standalone, not part of the study flow above
 
       scripts/
         seed_profiles.py          one-time/idempotent: creates or rotates PIN for the two fixed profiles
+        seed_videos.py               one-time/idempotent: imports the hand-verified video catalog (§8)
         clear_generation_halt.py    manually clears the Gemini billing-halt kill-switch
 
     alembic/versions/         — see §4 for what each migration added
@@ -103,18 +106,23 @@ lingua-app/
       pages/
         ProfilePicker.tsx           pick profile -> enter PIN -> login
         StudyPage.tsx                 orchestrates the continuous deck + round state machine (§6.3)
-        ProgressPage.tsx               words_seen/known/streak display
+        ProgressPage.tsx               words_seen/known/streak display, daily + weekly-video goal cards
+        VideoLibraryPage.tsx             standalone video library — level filter chips, watch-in-modal (§8)
       components/
         StudyCard.tsx                dispatcher across all 5 exercise shapes
         RevealExercise.tsx            level 0 (reveal-and-self-rate)
         MultipleChoiceExercise.tsx     levels 1-4 (all multiple-choice), shared answer/feedback flow
         ExerciseOptionGrid.tsx          the 4-option tap grid, phonetic-pairing enforcement lives here
         CardHeader.tsx                   shared topic/CEFR/review-badge header
-        RoundBanner.tsx                   "bonus round" announcement before recovery/mixed rounds
+        RoundBanner.tsx                   "bonus round" announcement before recovery/mixed/sentence rounds
         AudioButton.tsx                    plays cached backend audio (Hebrew) or speechSynthesis (fallback/Spanish)
         RatingButtons.tsx                   knew_it/almost/didnt_know (level 0 only)
         StreakBadge.tsx                       nav streak flame
-      lib/text.ts               — isHebrewText() — RTL detection for option text
+        YouTubePlayer.tsx                      mounts a YT.Player, fires onEnded on YT.PlayerState.ENDED (§8)
+      lib/
+        text.ts                  — isHebrewText() — RTL detection for option text
+        youtube.ts                 — loads the YouTube IFrame API script once (§8)
+        youtube-iframe.d.ts          — minimal ambient YT.Player/PlayerState types, no @types/youtube package
 ```
 
 ---
@@ -134,6 +142,11 @@ UserWordProgress ──N:1── WordPair
           ▼
 RecentMiss ──N:1── WordPair
 
+Profile ──┐
+          │ 1:N
+          ▼
+WatchedVideo ──N:1── Video   (§8 — independent of the study flow above)
+
 GenerationCallLog   (independent — audit trail for the Gemini cost cap)
 GenerationStatus     (independent — single-row kill-switch state, id=1)
 ```
@@ -146,6 +159,8 @@ GenerationStatus     (independent — single-row kill-switch state, id=1)
 | `recent_miss` | Pool a recovery round draws from; rows deleted once served. | `missed_at` |
 | `generation_call_log` | One row per Gemini call (or pair of calls — generate+verify). | `api_calls_made` (1 or 2 — both count against the daily cap) |
 | `generation_status` | Single row (id=1). The billing kill-switch. | `halted`, `halted_reason` — once true, nothing clears it except a human running `clear_generation_halt.py` |
+| `videos` | Shared video-library catalog (§8), seeded once via `seed_videos.py` — not per-profile, not Gemini-generated. | `youtube_video_id` (unique), `level`/`topic` (free text, verbatim from the source list), `ordering` |
+| `watched_videos` | Per-(profile, video) — a video watched to completion. | `UNIQUE(profile_id, video_id)` — first-time-only, re-watching doesn't move `watched_at` |
 
 **Migration history** (`backend/alembic/versions/`):
 
@@ -155,6 +170,12 @@ GenerationStatus     (independent — single-row kill-switch state, id=1)
 | `0002_verification` | `word_pairs.verified`/`verification_note`, `generation_call_log.api_calls_made`/`verify_status`/`words_verified_ok` |
 | `0003_exercise_ladder` | `user_word_progress.exercise_level`/`exercise_level_streak`, `profiles.total_reviews`, `recent_miss` table |
 | `0004_hebrew_audio` | `word_pairs.hebrew_audio` (bytea) |
+| `0005_fluency` | `profiles.fluency_threshold`, `user_word_progress.status` |
+| `0006_daily_stats` | `profiles.daily_goal`/`longest_streak`, `daily_activity` table |
+| `0007_starred` | `user_word_progress.starred` |
+| `0008_sentence_phonetic` | `word_pairs.example_sentence_phonetic_es`, `generation_call_log.call_kind` |
+| `0009_video_library` | `videos`, `watched_videos` tables, `profiles.weekly_video_goal` |
+| `0010_sentence_rules_version` | `word_pairs.sentence_rules_version` — backfill re-selection tracking (see §4) |
 
 ---
 
@@ -201,6 +222,34 @@ billing/credit/prepay/payment. Once halted, **nothing automatically
 clears it** — `python -m app.scripts.clear_generation_halt` is the only way,
 and it prints the reason first without `--yes` so you can sanity-check
 before clearing.
+
+**Sentence-quality pipeline** (`word_pairs.example_sentence_he`/`_es`/
+`_phonetic_es`, the fill_blank exercise's source material): every
+generated/verified sentence must satisfy `gemini_client.
+_SENTENCE_SPECIFICITY_RULES` — critically, the blank must land
+mid-sentence with disambiguating context on BOTH sides, not at the very
+end (a sentence-final blank is under-constrained almost by definition —
+natural sentences trail off generically, so nothing after the blank can
+rule out same-topic distractors). `gemini_client.
+CURRENT_SENTENCE_RULES_VERSION` versions this rule set; `word_pairs.
+sentence_rules_version` records which version a row's sentence was
+written under. This is the mechanism that lets the rule tighten later
+without stranding already-"fixed" rows: bumping the constant makes
+`run_sentence_backfill_batch`'s selection query (`sentence_rules_version <
+CURRENT_...`) reconsider EVERY row again, including ones a previous,
+weaker rule version already populated `example_sentence_phonetic_es`
+for — that column's NULL-ness alone is not a reliable "still needs
+backfill" signal once the rules themselves can change.
+
+`run_sentence_backfill_batch` (`services/word_generator.py`) mirrors the
+above two-stage shape but stricter: a regenerated sentence is only ever
+written to the row once verification actually confirms it (`ok`/
+`corrected`); if verification is skipped/errors/rejects, the row is left
+untouched — pre-existing behavior stays correct while it waits, unlike a
+brand-new word that has no bank content yet. Called opportunistically
+from the periodic top-up scheduler (`services/scheduler.py`), not a
+one-off burst script, so the daily cap is shared and re-checked exactly
+like the main pipeline's own stage 2.
 
 ---
 
@@ -292,14 +341,21 @@ call, regardless of exercise type):
 - **Recovery round** — every 15th review. Pulls up to 5 `RecentMiss` rows
   for that profile, deletes them once served (a miss is only ever offered
   once).
-- **Mixed round** — every 100th review. Pulls up to 8 due/near-due
+- **Mixed round** — every 30th review. Pulls up to 8 due/near-due
   `UserWordProgress` rows, broader refresher, nothing consumed.
-- Mixed wins on coincidence (e.g. review #300).
+- **Sentence round** — every 10th review. Pulls up to 5 `fill_blank` cards
+  from ANY word the profile has seen at least once (`times_seen >= 1`) —
+  deliberately not gated behind the word reaching `exercise_level` 4;
+  nothing consumed.
+- Priority on coincidence: mixed > recovery > sentence (e.g. review #30 is
+  mixed; a sentence round deferred by a collision just fires again at its
+  own next multiple of ten).
 
 Delivered as a `round_due` field on the `RateResponse`/`AnswerResponse` of
-the review that triggered it — not a separate endpoint. Round cards are
-always plain `multiple_choice`, regardless of the word's own stored
-`exercise_level` (supplementary practice, not level-progression).
+the review that triggered it — not a separate endpoint. Recovery/mixed
+round cards are always plain `multiple_choice`; sentence round cards are
+always `fill_blank` — regardless of the word's own stored `exercise_level`
+in either case (supplementary practice, not level-progression).
 **Frontend decision:** a round triggered *while already mid-round* is
 ignored, not queued — rounds don't nest (`StudyPage.tsx`'s
 `maybeStartRound`).
@@ -368,7 +424,39 @@ caught live during this build, both have regression tests in
 
 ---
 
-## 8. Local dev (current state)
+## 8. Video library (`services/videos.py`, `models.Video`/`WatchedVideo`)
+
+Standalone — NOT part of the study/exercise flow above; its own peer nav
+tab (`VideoLibraryPage.tsx`), not a Progress sub-page. A shared catalog
+(`videos`, seeded once via `python -m app.scripts.seed_videos` from a
+hand-verified list — every candidate YouTube ID was checked against
+YouTube's oEmbed endpoint before import, since an LLM-drafted candidate
+list routinely includes plausible-looking but non-existent or wrong video
+IDs) watched per-profile (`watched_videos`).
+
+Videos play in-app via YouTube's IFrame Player API (`YouTubePlayer.tsx` /
+`lib/youtube.ts` — no npm dependency, no API key; the real `iframe_api`
+script is loaded at runtime and a small local `.d.ts` covers just the
+`YT.Player`/`PlayerState` shape actually used). `onStateChange` firing
+`ENDED` is the sole "watched" signal — no self-report prompt.
+
+`watched_videos` is unique per `(profile_id, video_id)`: a video is marked
+watched once, the first time it's finished. Re-watching an old video
+doesn't re-count toward a later week's goal — deliberately about consuming
+*new* content, same "first-time achievement" spirit as `words_seen`/
+fluency elsewhere in this app, not a repeatable watch-session log.
+
+`Profile.weekly_video_goal` (default 1, editable via `PATCH
+/api/profiles/me` alongside `daily_goal`) drives a Progress-page goal card
+(`videos_watched_this_week` vs. `weekly_video_goal`) using the same rolling
+7-day window `get_weekly_summary` already established — one shared "this
+week" convention across the progress page, not a second one. `reset_profile`
+also clears a profile's `watched_videos` rows — it's learner progress, same
+scope as `UserWordProgress`/`RecentMiss`/`DailyActivity`.
+
+---
+
+## 9. Local dev (current state)
 
 ```
 docker compose up -d          # Postgres only, localhost:5432
@@ -387,7 +475,7 @@ one even though no container exists yet.
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 84 backend tests (`pytest`, `backend/tests/`), all against an in-memory
 SQLite DB via `conftest.py` fixtures — **no Postgres needed to run the
@@ -406,7 +494,7 @@ Vite setup already in place.
 
 ---
 
-## 10. Deployment
+## 11. Deployment
 
 **Target: Google Cloud Run + Supabase (managed Postgres).** Full step-by-step
 commands live in [DEPLOY.md](DEPLOY.md) — this section is the *why*/*how it

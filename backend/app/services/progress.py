@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import DailyActivity, Profile, UserWordProgress, WordPair
+from app.models import DailyActivity, Profile, UserWordProgress, WatchedVideo, WordPair
 from app.schemas import ActivityDayOut, ProgressOut, WeeklySummaryOut, WordProgressOut
 from app.services.cards import get_or_create_progress
 
@@ -54,6 +54,24 @@ def get_progress(db: Session, profile: Profile) -> ProgressOut:
     )
     today_review_count = today_activity.review_count if today_activity else 0
 
+    videos_watched = (
+        db.scalar(select(func.count()).select_from(WatchedVideo).where(WatchedVideo.profile_id == profile.id)) or 0
+    )
+    # Same rolling 7-day window as get_weekly_summary below — one shared
+    # "this week" convention across the progress page.
+    week_start = now.date() - timedelta(days=6)
+    videos_watched_this_week = (
+        db.scalar(
+            select(func.count())
+            .select_from(WatchedVideo)
+            .where(
+                WatchedVideo.profile_id == profile.id,
+                func.date(WatchedVideo.watched_at) >= week_start,
+            )
+        )
+        or 0
+    )
+
     return ProgressOut(
         words_seen=words_seen,
         words_fluent=words_fluent,
@@ -63,6 +81,9 @@ def get_progress(db: Session, profile: Profile) -> ProgressOut:
         due_today=due_today,
         daily_goal=profile.daily_goal,
         today_review_count=today_review_count,
+        videos_watched=videos_watched,
+        videos_watched_this_week=videos_watched_this_week,
+        weekly_video_goal=profile.weekly_video_goal,
     )
 
 

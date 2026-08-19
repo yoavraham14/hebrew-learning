@@ -28,6 +28,8 @@ def update_my_settings(payload: UpdateProfileSettingsRequest, profile: CurrentPr
         profile.fluency_threshold = payload.fluency_threshold
     if payload.daily_goal is not None:
         profile.daily_goal = payload.daily_goal
+    if payload.weekly_video_goal is not None:
+        profile.weekly_video_goal = payload.weekly_video_goal
     db.commit()
     db.refresh(profile)
     return profile

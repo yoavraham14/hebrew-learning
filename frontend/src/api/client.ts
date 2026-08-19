@@ -8,6 +8,7 @@ import type {
   ProgressOut,
   RateResponse,
   RatingResult,
+  Video,
   WeeklySummary,
   WordProgress,
 } from "../types";
@@ -86,7 +87,7 @@ export const api = {
 
   getProgress: () => request<ProgressOut>("/api/progress"),
 
-  updateSettings: (settings: { fluency_threshold?: number; daily_goal?: number }) =>
+  updateSettings: (settings: { fluency_threshold?: number; daily_goal?: number; weekly_video_goal?: number }) =>
     request<ProfilePublic>("/api/profiles/me", {
       method: "PATCH",
       body: JSON.stringify(settings),
@@ -121,4 +122,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ password, confirmation }),
     }),
+
+  getVideos: () => request<Video[]>("/api/videos"),
+
+  markVideoWatched: (videoId: number) =>
+    request<Video>(`/api/videos/${videoId}/watch`, { method: "POST" }),
 };

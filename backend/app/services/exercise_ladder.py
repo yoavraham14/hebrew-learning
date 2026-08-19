@@ -177,6 +177,7 @@ def build_multiple_choice_card(
     prompt_text = prompt_lang = prompt_phonetic = None
     audio_text = audio_lang = None
     fill_blank_sentence = None
+    fill_blank_sentence_phonetic = None
 
     if exercise_type == "multiple_choice":
         options = _build_options(db, profile, word_pair, lang=target_lang)
@@ -197,6 +198,20 @@ def build_multiple_choice_card(
         sentence = word_pair.example_sentence_he if target_lang == "he" else word_pair.example_sentence_es
         target_text, _ = _text_and_phonetic(profile, word_pair, target_lang)
         fill_blank_sentence = sentence.replace(target_text, "____", 1) if target_text in sentence else sentence
+
+        # Full-sentence Spanish-phonetic transliteration, blanked the same
+        # best-effort way as the Hebrew sentence above — only meaningful
+        # when reading Hebrew script as a non-Hebrew-native (same gate
+        # _text_and_phonetic uses for the per-word phonetic_es), and only
+        # once the word's sentence has been backfilled with one (NULL
+        # until then — see word_pair.example_sentence_phonetic_es).
+        if target_lang == "he" and profile.native_lang != "he" and word_pair.example_sentence_phonetic_es:
+            phonetic_sentence = word_pair.example_sentence_phonetic_es
+            fill_blank_sentence_phonetic = (
+                phonetic_sentence.replace(word_pair.phonetic_es, "____", 1)
+                if word_pair.phonetic_es in phonetic_sentence
+                else phonetic_sentence
+            )
     else:
         raise ValueError(f"unknown exercise_type: {exercise_type!r}")
 
@@ -214,6 +229,7 @@ def build_multiple_choice_card(
         audio_text=audio_text,
         audio_lang=audio_lang,
         fill_blank_sentence=fill_blank_sentence,
+        fill_blank_sentence_phonetic=fill_blank_sentence_phonetic,
         options=options,
     )
 
