@@ -95,7 +95,7 @@ lingua-app/
         clear_generation_halt.py    manually clears the Gemini billing-halt kill-switch
 
     alembic/versions/         — see §4 for what each migration added
-    tests/                       — 84 tests, pytest, in-memory SQLite (no Postgres needed)
+    tests/                       — 193 tests, pytest, in-memory SQLite (no Postgres needed)
 
   frontend/
     src/
