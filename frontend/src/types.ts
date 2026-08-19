@@ -59,6 +59,7 @@ export interface MultipleChoiceCardOut {
   audio_text: string | null;
   audio_lang: Lang | null;
 
+  fill_blank_native_sentence: string | null;
   fill_blank_sentence: string | null;
   fill_blank_sentence_phonetic: string | null;
 

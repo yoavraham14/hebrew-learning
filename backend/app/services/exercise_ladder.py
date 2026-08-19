@@ -75,6 +75,39 @@ def _text_and_phonetic(profile: Profile, word_pair: WordPair, lang: Lang) -> tup
     return word_pair.spanish_word, None
 
 
+def _blank_out(sentence: str, target: str) -> str:
+    """Replace the first occurrence of `target` in `sentence` with "____".
+
+    Tolerates one specific mismatch: `target` is the sentence's OWN first
+    word, whose leading letter is capitalized for the sentence — breaking
+    a naive case-sensitive match against the stored target text, which is
+    always lowercase (a word-level phonetic_es is never itself capitalized;
+    only a full sentence's first letter is). Without this, a sentence-
+    initial target word would silently fail to blank and reveal the
+    answer outright — a real bug found while manually backfilling
+    example_sentence_phonetic_es (word_generator's manual-backfill pass).
+    Harmless no-op for Hebrew script, which has no case distinction.
+
+    Falls back to returning `sentence` unblanked if `target` truly isn't
+    found either way — better to show the whole sentence than crash.
+    """
+    if target in sentence:
+        return sentence.replace(target, "____", 1)
+    if sentence and sentence[0].isupper():
+        lowered = sentence[0].lower() + sentence[1:]
+        if target in lowered:
+            return lowered.replace(target, "____", 1)
+    return sentence
+
+
+def _example_sentence_for_lang(word_pair: WordPair, lang: Lang) -> str:
+    """The word's full (unblanked) example sentence in `lang`. Both columns
+    are non-nullable — every WordPair row always has both sides, unlike
+    example_sentence_phonetic_es which can still be NULL pre-backfill.
+    """
+    return word_pair.example_sentence_he if lang == "he" else word_pair.example_sentence_es
+
+
 def _options_lang_for_level(profile: Profile, level: int) -> Lang:
     is_target = _OPTIONS_SIDE_IS_TARGET.get(level, True)
     return profile.target_lang if is_target else profile.native_lang  # type: ignore[return-value]
@@ -176,6 +209,7 @@ def build_multiple_choice_card(
 
     prompt_text = prompt_lang = prompt_phonetic = None
     audio_text = audio_lang = None
+    fill_blank_native_sentence = None
     fill_blank_sentence = None
     fill_blank_sentence_phonetic = None
 
@@ -195,9 +229,22 @@ def build_multiple_choice_card(
         audio_lang = target_lang
     elif exercise_type == "fill_blank":
         options = _build_options(db, profile, word_pair, lang=target_lang)
-        sentence = word_pair.example_sentence_he if target_lang == "he" else word_pair.example_sentence_es
+
+        # Shown ABOVE the blanked sentence — the full, unblanked sentence in
+        # the profile's NATIVE language. This is the actual fix for
+        # ambiguous fill-blank sentences: the learner already knows the
+        # target concept before reading the target-language sentence, so
+        # the task becomes "recall the word for this known meaning," not
+        # "guess which word fits this context" — the target sentence no
+        # longer has to be self-disambiguating on its own (see
+        # gemini_client._SENTENCE_SPECIFICITY_RULES for the corresponding
+        # prompt-side relaxation). Always populated — both example_sentence
+        # columns are non-nullable.
+        fill_blank_native_sentence = _example_sentence_for_lang(word_pair, native_lang)
+
+        sentence = _example_sentence_for_lang(word_pair, target_lang)
         target_text, _ = _text_and_phonetic(profile, word_pair, target_lang)
-        fill_blank_sentence = sentence.replace(target_text, "____", 1) if target_text in sentence else sentence
+        fill_blank_sentence = _blank_out(sentence, target_text)
 
         # Full-sentence Spanish-phonetic transliteration, blanked the same
         # best-effort way as the Hebrew sentence above — only meaningful
@@ -206,12 +253,7 @@ def build_multiple_choice_card(
         # once the word's sentence has been backfilled with one (NULL
         # until then — see word_pair.example_sentence_phonetic_es).
         if target_lang == "he" and profile.native_lang != "he" and word_pair.example_sentence_phonetic_es:
-            phonetic_sentence = word_pair.example_sentence_phonetic_es
-            fill_blank_sentence_phonetic = (
-                phonetic_sentence.replace(word_pair.phonetic_es, "____", 1)
-                if word_pair.phonetic_es in phonetic_sentence
-                else phonetic_sentence
-            )
+            fill_blank_sentence_phonetic = _blank_out(word_pair.example_sentence_phonetic_es, word_pair.phonetic_es)
     else:
         raise ValueError(f"unknown exercise_type: {exercise_type!r}")
 
@@ -228,6 +270,7 @@ def build_multiple_choice_card(
         prompt_phonetic=prompt_phonetic,
         audio_text=audio_text,
         audio_lang=audio_lang,
+        fill_blank_native_sentence=fill_blank_native_sentence,
         fill_blank_sentence=fill_blank_sentence,
         fill_blank_sentence_phonetic=fill_blank_sentence_phonetic,
         options=options,

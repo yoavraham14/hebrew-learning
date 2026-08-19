@@ -176,6 +176,7 @@ GenerationStatus     (independent — single-row kill-switch state, id=1)
 | `0008_sentence_phonetic` | `word_pairs.example_sentence_phonetic_es`, `generation_call_log.call_kind` |
 | `0009_video_library` | `videos`, `watched_videos` tables, `profiles.weekly_video_goal` |
 | `0010_sentence_rules_version` | `word_pairs.sentence_rules_version` — backfill re-selection tracking (see §4) |
+| `0011_sentence_source` | `word_pairs.sentence_source` — per-row provenance: `generated`/`gemini_backfill`/`manual_backfill` (see §4) |
 
 ---
 
@@ -224,32 +225,58 @@ and it prints the reason first without `--yes` so you can sanity-check
 before clearing.
 
 **Sentence-quality pipeline** (`word_pairs.example_sentence_he`/`_es`/
-`_phonetic_es`, the fill_blank exercise's source material): every
-generated/verified sentence must satisfy `gemini_client.
-_SENTENCE_SPECIFICITY_RULES` — critically, the blank must land
-mid-sentence with disambiguating context on BOTH sides, not at the very
-end (a sentence-final blank is under-constrained almost by definition —
-natural sentences trail off generically, so nothing after the blank can
-rule out same-topic distractors). `gemini_client.
-CURRENT_SENTENCE_RULES_VERSION` versions this rule set; `word_pairs.
-sentence_rules_version` records which version a row's sentence was
-written under. This is the mechanism that lets the rule tighten later
-without stranding already-"fixed" rows: bumping the constant makes
-`run_sentence_backfill_batch`'s selection query (`sentence_rules_version <
-CURRENT_...`) reconsider EVERY row again, including ones a previous,
-weaker rule version already populated `example_sentence_phonetic_es`
-for — that column's NULL-ness alone is not a reliable "still needs
-backfill" signal once the rules themselves can change.
+`_phonetic_es`, the fill_blank exercise's source material). **Current
+design (superseded the mid-sentence-blank approach this section used to
+describe):** ambiguity is solved at the UI level, not by constraining the
+sentence's structure — `exercise_ladder.build_multiple_choice_card`'s
+`fill_blank` branch shows the FULL, unblanked sentence in the profile's
+*native* language (`fill_blank_native_sentence`) above the blanked
+*target*-language sentence. The learner already knows the intended
+meaning before reading the target sentence, so the target sentence's job
+is just to be a natural, correct example of the word in use — that's all
+`gemini_client._SENTENCE_SPECIFICITY_RULES` requires now. (History: an
+earlier version of this rule required the blank to be mid-sentence with
+disambiguating context on both sides, reacting to a live "אני רוצה ___"
+ambiguity bug; that requirement is gone, redundant once the native
+sentence is shown up front.)
 
-`run_sentence_backfill_batch` (`services/word_generator.py`) mirrors the
-above two-stage shape but stricter: a regenerated sentence is only ever
-written to the row once verification actually confirms it (`ok`/
-`corrected`); if verification is skipped/errors/rejects, the row is left
-untouched — pre-existing behavior stays correct while it waits, unlike a
-brand-new word that has no bank content yet. Called opportunistically
-from the periodic top-up scheduler (`services/scheduler.py`), not a
-one-off burst script, so the daily cap is shared and re-checked exactly
-like the main pipeline's own stage 2.
+`gemini_client.CURRENT_SENTENCE_RULES_VERSION` still versions the rule
+set; `word_pairs.sentence_rules_version` records which version a row's
+sentence content was last assessed under, and `word_pairs.sentence_source`
+(`"generated"` | `"gemini_backfill"` | `"manual_backfill"`) records how it
+got there — both exist for per-row auditability, not because the current
+rule is expected to tighten again soon. `run_sentence_backfill_batch`
+(`services/word_generator.py`) now **preserves the existing sentence by
+default**, only adding `example_sentence_phonetic_es` — it no longer
+rewrites `example_sentence_he`/`_es` as a matter of course, since the
+specificity requirement that used to justify that no longer applies; it
+still mirrors the two-stage generate-then-verify shape and the "never
+apply an unconfirmed write" strictness described in `word_generator.py`'s
+docstring. Called opportunistically from the periodic top-up scheduler
+(`services/scheduler.py`), not a one-off burst script, so the daily cap is
+shared and re-checked exactly like the main pipeline's own stage 2.
+
+**One-off manual backfill** (2026-08-20): 94 of the 100 word_pairs in the
+production bank had `example_sentence_phonetic_es` hand-transliterated
+directly against Supabase — no Gemini calls — to conserve quota, following
+the same `_SENTENCE_PHONETIC_RULES` a real call would. `sentence_source =
+"manual_backfill"` marks these rows. 6 rows were deliberately left for the
+normal Gemini-driven path (`sentence_rules_version` still `0`): construct-
+phrase or inflected-form sentences where the stored word-level
+`phonetic_es` can't safely appear as a literal substring of a hand-written
+sentence transliteration without either misrepresenting the pronunciation
+or risking the blanking bug below — not worth guessing at by hand.
+
+**Blanking bug fixed alongside this** (`exercise_ladder._blank_out`):
+both the Hebrew and phonetic blanking logic used to do a naive
+`sentence.replace(target, "____", 1) if target in sentence else sentence`
+— when `target` is the sentence's own first word, its capitalized leading
+letter breaks a case-sensitive match against the always-lowercase stored
+target text, so the blank silently fails and the answer is shown
+unblanked instead of hidden. `_blank_out` (shared by both call sites) now
+falls back to a case-tolerant match when the plain one fails. Verified
+live against real rows where the target word starts the sentence
+(e.g. `Sabá`, `Shigrá`, `Ikviyút`) during the manual backfill above.
 
 ---
 
@@ -311,7 +338,7 @@ Independent of the box ladder, stored on the same `user_word_progress` row
 | 1 | `multiple_choice` | native prompt → pick correct target from 4 options |
 | 2 | `reverse` | target prompt (+ audio + phonetic) → pick correct native meaning |
 | 3 | `audio_only` | no visible prompt, only audio → pick correct meaning |
-| 4 | `fill_blank` | example sentence with target word blanked → pick correct word |
+| 4 | `fill_blank` | full native-language sentence shown first, then example sentence with target word blanked → pick correct word (see §4's sentence-quality pipeline for why the native sentence comes first) |
 
 `compute_level_transition(current_level, current_streak, correct)`: one miss
 demotes a level (floor 0); `PROMOTE_STREAK = 2` consecutive correct answers

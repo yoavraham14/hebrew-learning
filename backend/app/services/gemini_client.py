@@ -103,56 +103,46 @@ _SENTENCE_PHONETIC_RULES = f"""{_PHONETIC_RULES}
   sentence reads as a whole."""
 
 # Bump this whenever _SENTENCE_SPECIFICITY_RULES changes in a way that
-# could make a previously-accepted sentence fail now (i.e. any real
-# tightening, not a wording-only tweak). WordPair.sentence_rules_version is
-# stamped with this value at insert time (word_generator._insert_words_
-# with_verification) and again whenever the sentence-backfill pipeline
-# regenerates a row (word_generator.run_sentence_backfill_batch) — the
-# backfill selection query is `sentence_rules_version < CURRENT_...`, so
-# bumping this constant is what makes backfill reconsider EVERY row again,
-# including ones a previous (weaker) version of this rule already "fixed"
-# and populated example_sentence_phonetic_es for. That NULL-ness alone
-# stopped being a reliable "needs backfill" signal the moment the rules
-# themselves could tighten out from under an already-populated row — see
-# the video-library-feature-followup plan for the incident that prompted
-# this (a live "אני רוצה ___" sentence that passed the v0 rules).
+# could make a previously-accepted sentence fail now. WordPair.
+# sentence_rules_version is stamped with this value at insert time
+# (word_generator._insert_words_with_verification) and again whenever a
+# sentence gets regenerated/backfilled (word_generator.
+# run_sentence_backfill_batch, or the one-off manual backfill pass — see
+# WordPair.sentence_source) — the backfill selection query is
+# `sentence_rules_version < CURRENT_...`, so bumping this constant is what
+# makes backfill reconsider every row again.
+#
+# History: v1 originally meant "blank is mid-sentence, disambiguated by
+# context on both sides" (a reaction to a live "אני רוצה ___" sentence
+# where every same-topic distractor still fit). That requirement is GONE
+# as of this comment, superseded by a UI-level fix instead: fill_blank
+# cards now show the full native-language sentence above the blanked
+# target-language one (see exercise_ladder.build_multiple_choice_card's
+# fill_blank_native_sentence), so the learner already knows the target
+# concept before reading the target sentence — the sentence itself no
+# longer has to be self-disambiguating. v1 is redefined below rather than
+# bumped to v2 because nothing in production was ever actually processed
+# under the old v1 meaning (confirmed: still 100% at v0 when this shipped).
 CURRENT_SENTENCE_RULES_VERSION = 1
 
 # Shared between the generation and verification prompts (and the sentence-
-# backfill prompts, which face the identical problem) so "ambiguous
-# sentence" means the same thing everywhere it's checked for.
+# backfill prompts, which face the identical problem) so what counts as an
+# acceptable sentence means the same thing everywhere it's checked for.
 #
-# The blank MUST NOT be sentence-final — a live example that slipped past
-# an earlier, weaker version of this rule: "אני רוצה ___" ("I want ___")
-# has a subject+verb+blank shape ending right at the blank, so nothing
-# after it narrows the field; every food word in the distractor pool still
-# fit. Natural sentences tend to "resolve" loosely at their end, so a
-# trailing blank is almost always under-constrained no matter how specific
-# the words BEFORE it are — the fix has to put disambiguating context
-# AFTER the blank too, not just before it.
-_SENTENCE_SPECIFICITY_RULES = """- The sentence must have exactly ONE word from this topic/CEFR level that
-  correctly fills the blank where the vocabulary word goes — not a bare
-  subject+verb+blank pattern that any noun/verb in the same category could
-  complete equally well.
-- The blank must be placed IN THE MIDDLE of the sentence, flanked by real
-  words on BOTH sides — never the last word before the final punctuation.
-  A blank at the very end is a hard reject even if the words before it
-  seem specific: sentences naturally trail off into something generic, so
-  there is nothing left to rule out other candidates.
-  BAD (blank is sentence-final — any food word fits, nothing after it to
-  narrow things down): "Como ___" / "אני אוכל ___" ("I eat ___"); "אני
-  רוצה ___" ("I want ___") is exactly as bad even though "I want" sounds
-  more specific than "I eat" — the problem is the missing tail, not the verb.
-  GOOD (concrete context on BOTH sides of the blank — a qualifying phrase
-  AFTER the blank is what actually narrows it to one answer): "אני רוצה
-  ___ של תרנגולת" ("I want ___ of chicken" — only "egg" fits, not
-  chocolate/tomato/salt); "Pongo ___ en la ensalada de tomate" ("I put
-  ___ in the tomato salad" — the trailing context picks the one dressing/
-  vegetable/spice that belongs there, not any food word).
-  Assume the multiple-choice distractors will be OTHER words from the same
-  topic and CEFR level — the sentence must rule them out on BOTH sides of
-  the blank, not merely be grammatically fine with the target word
-  inserted."""
+# Deliberately NOT requiring the blank to be mid-sentence or the sentence
+# to rule out same-topic distractors on its own — that used to be required
+# here, but fill_blank cards now show the full native-language sentence
+# above the blanked target-language one (see exercise_ladder.py), so the
+# learner already knows the intended meaning before reading the target
+# sentence. The target sentence's job is just to be a natural, correct
+# example of the word in use — same bar as before v1 ever existed.
+_SENTENCE_SPECIFICITY_RULES = """- The sentence must be natural, grammatically correct, and use the
+  vocabulary word in its most common, everyday sense — not an obscure or
+  overly literary usage. A bare subject+verb+object sentence (e.g. "אני
+  אוכל ___" / "I eat ___") is perfectly fine; it does NOT need to rule out
+  other same-topic words on its own, since the learner sees the full
+  native-language translation of the sentence before the target-language
+  one, which already tells them which word is intended."""
 
 
 def _build_prompt(*, topic: str, cefr_level: str, exclude_hebrew_words: list[str], batch_size: int) -> str:
@@ -177,9 +167,10 @@ vocabulary words at CEFR level {cefr_level}, on the topic "{topic}".
 - cefr_level: "{cefr_level}"
 - topic: "{topic}"
 - example_sentence_he: one short, natural sentence in Hebrew using the word.
-  This sentence is used as a fill-in-the-blank exercise — the word gets
-  blanked out and the learner picks it from multiple choice. That means it
-  is NOT enough for the sentence to just use the word correctly:
+  This sentence is also used as a fill-in-the-blank exercise (the word
+  gets blanked out), but the learner is shown the full native-language
+  translation of the sentence first, so it does NOT need to be
+  self-disambiguating on its own:
 {_SENTENCE_SPECIFICITY_RULES}
 - example_sentence_es: the Spanish translation of that same example sentence.
 
@@ -225,16 +216,13 @@ For each entry below (topic "{topic}", CEFR level {cefr_level}), check:
    {_PHONETIC_RULES}
    Also sanity-check phonetic_en the same way for an English reader.
 4. Does the example sentence actually use the word in its most common,
-   everyday sense — not an obscure secondary meaning?
-5. Is the example sentence specific enough for a fill-in-the-blank exercise
-   (the word gets blanked out and the learner picks it from multiple
-   choice, drawn from other words of the same topic and CEFR level)?
+   everyday sense, in a natural and grammatically correct way?
 {_SENTENCE_SPECIFICITY_RULES}
-   If it's too generic, this is a "corrected" case, not "ok" — rewrite
+   If it doesn't, this is a "corrected" case, not "ok" — rewrite
    example_sentence_he and example_sentence_es together (they must still
-   translate each other) to add specific context, and update
-   example_sentence_phonetic_es to match the rewritten sentence.
-6. Is example_sentence_phonetic_es a phonetically correct Spanish-reader
+   translate each other), and update example_sentence_phonetic_es to
+   match the rewritten sentence.
+5. Is example_sentence_phonetic_es a phonetically correct Spanish-reader
    transliteration of the FULL example_sentence_he sentence (not just the
    vocabulary word)?
    {_SENTENCE_PHONETIC_RULES}
@@ -356,35 +344,44 @@ def verify_word_batch(
 
 # ---------------------------------------------------------------------------
 # Sentence backfill pipeline (app.services.word_generator.
-# run_sentence_backfill_batch) — regenerates ONLY example_sentence_he/_es/
-# _phonetic_es for existing WordPair rows predating the specificity/
-# transliteration fix above. Never re-translates hebrew_word/spanish_word/
-# etc., which are already verified. Correlates by word_pair_id (a backfill
-# batch spans arbitrary existing words of mixed topic/level, unlike a fresh
-# generation batch which is always one topic/level), not array index.
+# run_sentence_backfill_batch) — for existing WordPair rows missing
+# example_sentence_phonetic_es. Never re-translates hebrew_word/
+# spanish_word/etc., which are already verified. Correlates by
+# word_pair_id (a backfill batch spans arbitrary existing words of mixed
+# topic/level, unlike a fresh generation batch which is always one
+# topic/level), not array index.
+#
+# PRESERVES the existing sentence by default — only adds the phonetic
+# transliteration. This mirrors the one-off manual backfill pass (see
+# WordPair.sentence_source): existing sentences are already
+# Gemini-generated and were already verified once, and the specificity
+# requirement that used to justify rewriting them (see
+# CURRENT_SENTENCE_RULES_VERSION's docstring) no longer applies. Only
+# rewrite a sentence if it's actually defective — doesn't use the word,
+# wrong grammar, wrong register — not as a matter of course.
 # ---------------------------------------------------------------------------
 
 
 def _build_sentence_backfill_prompt(items: list[SentenceBackfillItem]) -> str:
     indexed = [item.model_dump() for item in items]
-    return f"""You are rewriting example sentences for an existing Hebrew<->Spanish<->
-English vocabulary bank (a bilingual flashcard app). The translations below
-are already correct and verified — do NOT change hebrew_word, spanish_word,
-english_word, part_of_speech, topic, or cefr_level. Your only job is to
-write a NEW example sentence for each word (its old one was too generic for
-a fill-in-the-blank exercise) plus its full-sentence phonetic
-transliteration.
+    return f"""You are adding phonetic transliterations to existing example sentences in
+a Hebrew<->Spanish<->English vocabulary bank (a bilingual flashcard app).
+The translations AND example sentences below are already correct and
+verified — do NOT change hebrew_word, spanish_word, english_word,
+part_of_speech, topic, cefr_level, example_sentence_he, or
+example_sentence_es, UNLESS an entry's example_sentence_he is actually
+defective (doesn't use hebrew_word, wrong grammar, wrong register) — only
+in that case, rewrite example_sentence_he and example_sentence_es together
+(they must still translate each other). The bar for the sentence, if you
+do need to touch it:
+{_SENTENCE_SPECIFICITY_RULES}
 
 For each entry, produce:
-- example_sentence_he: one short, natural sentence in Hebrew using
-  hebrew_word. This sentence is used as a fill-in-the-blank exercise — the
-  word gets blanked out and the learner picks it from multiple choice,
-  drawn from other words of the same topic and CEFR level:
-{_SENTENCE_SPECIFICITY_RULES}
-- example_sentence_es: the Spanish translation of that same example
-  sentence.
+- example_sentence_he: normally just echo the input value back unchanged.
+- example_sentence_es: normally just echo the input value back unchanged.
 - example_sentence_phonetic_es: the Spanish-phonetic transliteration of the
-  ENTIRE example_sentence_he sentence (not just the word):
+  ENTIRE example_sentence_he sentence (not just the word) — this is the
+  actual point of this pass:
 {_SENTENCE_PHONETIC_RULES}
 
 Entries (JSON array, each tagged with its "word_pair_id" — echo that same
@@ -463,23 +460,22 @@ def _build_sentence_backfill_verification_prompt(
         }
         for r in results
     ]
-    return f"""You are reviewing rewritten example sentences for a Hebrew<->Spanish<->
-English vocabulary bank (a bilingual flashcard app). Each entry below
-carries its own topic and CEFR level (this batch spans multiple words, not
-one shared topic). For each entry, check:
+    return f"""You are reviewing phonetic transliterations added to existing example
+sentences in a Hebrew<->Spanish<->English vocabulary bank (a bilingual
+flashcard app). Each entry below carries its own topic and CEFR level
+(this batch spans multiple words, not one shared topic). The example
+sentences themselves are normally UNCHANGED from what already existed —
+only reject/correct them if something is actually wrong, don't rewrite a
+fine sentence just to make it "better." For each entry, check:
 
-1. Is the example sentence specific enough for a fill-in-the-blank
-   exercise (the word gets blanked out and the learner picks it from
-   multiple choice, drawn from other words of the same topic and CEFR
-   level)?
+1. Is the example sentence natural, grammatically correct, and does it
+   actually use hebrew_word in its common everyday sense?
 {_SENTENCE_SPECIFICITY_RULES}
-   If it's too generic, this is a "corrected" case — rewrite
-   example_sentence_he and example_sentence_es together (they must still
-   translate each other) to add specific context, and update
+   Only if it fails this (not just "could be more specific") is this a
+   "corrected" case — rewrite example_sentence_he and example_sentence_es
+   together (they must still translate each other), and update
    example_sentence_phonetic_es to match.
-2. Does example_sentence_he actually use hebrew_word (unchanged from the
-   input — you are not translating, only checking/fixing the sentence)?
-3. Is example_sentence_phonetic_es a phonetically correct Spanish-reader
+2. Is example_sentence_phonetic_es a phonetically correct Spanish-reader
    transliteration of the FULL example_sentence_he sentence?
    {_SENTENCE_PHONETIC_RULES}
 

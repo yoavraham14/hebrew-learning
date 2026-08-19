@@ -165,6 +165,7 @@ def _insert_words_with_verification(
                 verified=verified,
                 verification_note=note,
                 sentence_rules_version=CURRENT_SENTENCE_RULES_VERSION,
+                sentence_source="generated",
             )
         )
         db.flush()
@@ -386,6 +387,8 @@ def run_sentence_backfill_batch(db: Session, *, batch_size: int | None = None) -
             part_of_speech=w.part_of_speech,
             topic=w.topic,
             cefr_level=w.cefr_level,
+            example_sentence_he=w.example_sentence_he,
+            example_sentence_es=w.example_sentence_es,
         )
         for w in rows
     ]
@@ -470,6 +473,7 @@ def run_sentence_backfill_batch(db: Session, *, batch_size: int | None = None) -
             w.example_sentence_es = final.example_sentence_es
             w.example_sentence_phonetic_es = final.example_sentence_phonetic_es
             w.sentence_rules_version = CURRENT_SENTENCE_RULES_VERSION
+            w.sentence_source = "gemini_backfill"
             updated += 1
 
     status.last_success_at = _utcnow()

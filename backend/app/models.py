@@ -112,6 +112,14 @@ class WordPair(Base):
     # insert time (word_generator._insert_words_with_verification) and
     # again on every successful backfill regeneration.
     sentence_rules_version: Mapped[int] = mapped_column(Integer, default=0)
+    # Provenance of the CURRENT example_sentence_*/example_sentence_phonetic_es
+    # values, for per-row auditability: "generated" (fresh generation,
+    # word_generator._insert_words_with_verification), "gemini_backfill"
+    # (word_generator.run_sentence_backfill_batch), "manual_backfill" (a
+    # one-off hand-written pass, direct DB write, no Gemini call — see the
+    # fill-blank-redesign plan). Not an enum at the DB level (same style as
+    # GenerationCallLog.call_kind) — just documented values.
+    sentence_source: Mapped[str] = mapped_column(String(16), default="generated")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -304,7 +312,10 @@ class GenerationCallLog(Base):
     # "sentence_backfill" (app.services.word_generator.
     # run_sentence_backfill_batch) — both share the same daily cap counted
     # by _count_calls_today; this just keeps the audit trail legible about
-    # which pipeline made each call.
+    # which pipeline made each call. | "manual_backfill" — a one-off
+    # hand-written batch (see WordPair.sentence_source), logged here for
+    # the batch-level record but with api_calls_made=0 since no real
+    # Gemini call happened — it must NOT count against the daily cap.
     call_kind: Mapped[str] = mapped_column(String(24), default="generate")
 
 

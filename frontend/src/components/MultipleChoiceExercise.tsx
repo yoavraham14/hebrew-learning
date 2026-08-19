@@ -73,7 +73,15 @@ export function MultipleChoiceExercise({
             <p className="text-sm text-parchment/50">Tap to hear the word</p>
           </div>
         ) : card.exercise_type === "fill_blank" ? (
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-3">
+            {card.fill_blank_native_sentence && (
+              <p
+                dir={isHebrewText(card.fill_blank_native_sentence) ? "rtl" : "ltr"}
+                className="break-words text-lg text-parchment/60"
+              >
+                {card.fill_blank_native_sentence}
+              </p>
+            )}
             <p
               dir={card.fill_blank_sentence && isHebrewText(card.fill_blank_sentence) ? "rtl" : "ltr"}
               className="break-words text-3xl font-bold leading-snug sm:text-4xl"

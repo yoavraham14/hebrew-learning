@@ -121,6 +121,13 @@ class SentenceBackfillItem(BaseModel):
     part_of_speech: str
     topic: str
     cefr_level: CefrLevel
+    # The existing sentence pair — sent so the backfill prompt can echo it
+    # back unchanged (the common case: only example_sentence_phonetic_es
+    # is actually missing) rather than needing to reinvent a sentence it
+    # already has, and reserve regeneration for entries that are actually
+    # defective.
+    example_sentence_he: str
+    example_sentence_es: str
 
 
 class SentenceBackfillResult(BaseModel):
@@ -268,6 +275,13 @@ class MultipleChoiceCardOut(BaseModel):
     audio_text: str | None = None
     audio_lang: Lang | None = None
 
+    # Only for fill_blank — the FULL, unblanked sentence in the profile's
+    # native language, shown ABOVE fill_blank_sentence. This is what makes
+    # the exercise "recall the word for this known meaning" rather than
+    # "guess from context" — see exercise_ladder.build_multiple_choice_card
+    # for why this replaced trying to make the target sentence itself
+    # unambiguous. Always populated when exercise_type is fill_blank.
+    fill_blank_native_sentence: str | None = None
     # Only for fill_blank — the example sentence with the target word
     # blanked out. prompt_text is unused in that case.
     fill_blank_sentence: str | None = None

@@ -5,8 +5,32 @@ from app.services.exercise_ladder import (
     MAX_LEVEL,
     NUM_OPTIONS,
     PROMOTE_STREAK,
+    _blank_out,
     compute_level_transition,
 )
+
+
+# ---------------------------------------------------------------------------
+# _blank_out — pure function, no DB needed
+# ---------------------------------------------------------------------------
+
+
+def test_blank_out_replaces_first_occurrence():
+    assert _blank_out("Aní ojél léjem.", "léjem") == "Aní ojél ____."
+
+
+def test_blank_out_tolerates_sentence_initial_capitalized_target():
+    # The real bug this guards against: the target word is the sentence's
+    # own first word, so its leading letter is capitalized for the
+    # sentence — a naive case-sensitive match against the stored
+    # (lowercase) target text would silently fail and leave the answer
+    # fully visible instead of blanking it.
+    assert _blank_out("Jamí ovéd kemehandés.", "jam") == "____í ovéd kemehandés."
+
+
+def test_blank_out_falls_back_to_unblanked_when_target_truly_absent():
+    # Better to show the whole sentence than crash or blank nothing wrong.
+    assert _blank_out("Aní ojél léjem.", "banána") == "Aní ojél léjem."
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +208,33 @@ def test_fill_blank_sentence_blanks_out_the_target_word(db_session):
 
     assert "____" in card.fill_blank_sentence
     assert words[0].hebrew_word not in card.fill_blank_sentence
+
+
+def test_fill_blank_native_sentence_shown_for_hebrew_learner(db_session):
+    # Hebrew-learner: native=es, target=he — the full Spanish sentence is
+    # shown above the blanked Hebrew one (this is the actual ambiguity
+    # fix — see exercise_ladder.build_multiple_choice_card's docstring).
+    profile = _hebrew_learner(db_session)
+    words = _seed_words(db_session, 4)
+
+    card = exercise_ladder.build_multiple_choice_card(
+        db_session, profile, words[0], exercise_type="fill_blank", is_review=False
+    )
+
+    assert card.fill_blank_native_sentence == words[0].example_sentence_es
+
+
+def test_fill_blank_native_sentence_shown_for_spanish_learner(db_session):
+    # Symmetric in the other direction: native=he, target=es — the full
+    # Hebrew sentence is shown above the blanked Spanish one.
+    profile = _spanish_learner(db_session)
+    words = _seed_words(db_session, 4)
+
+    card = exercise_ladder.build_multiple_choice_card(
+        db_session, profile, words[0], exercise_type="fill_blank", is_review=False
+    )
+
+    assert card.fill_blank_native_sentence == words[0].example_sentence_he
 
 
 def test_fill_blank_sentence_phonetic_blanked_when_backfilled(db_session):
